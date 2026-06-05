@@ -5,6 +5,7 @@ from agent.state import AgentState
 from agent.graph import ingest_plan, build_graph, approve, _parse_resume, generate_plan, route_after_approve
 from agent.plan_schema import LessonPlan, LearningObjective
 from agent.nodes.grade import grade, route_mcq, route_after_grade
+from agent.nodes.ask_mcq import ask_mcq
 
 
 def test_agent_state_defaults():
@@ -299,3 +300,36 @@ def test_route_after_grade_incorrect_routes_to_ask_mcq():
         last_grade={"correct": False, "hint": "Think again."},
     )
     assert route_after_grade(state) == "ask_mcq"
+
+
+# ── ask_mcq ────────────────────────────────────────────────────────────
+
+def test_ask_mcq_calls_interrupt_with_mcq_payload():
+    mcq = _mcq_dict()
+    state = AgentState(messages=[], current_mcq=mcq, last_grade=None)
+    with patch("agent.nodes.ask_mcq.interrupt") as mock_interrupt:
+        mock_interrupt.return_value = {"kind": "answer", "index": 1}
+        result = ask_mcq(state)
+    mock_interrupt.assert_called_once_with({"type": "mcq", "content": mcq, "feedback": None})
+    assert result["last_answer"] == {"kind": "answer", "index": 1}
+
+
+def test_ask_mcq_passes_last_grade_as_feedback_on_retry():
+    mcq = _mcq_dict()
+    last_grade = {"correct": False, "hint": "Think about C."}
+    state = AgentState(messages=[], current_mcq=mcq, last_grade=last_grade)
+    with patch("agent.nodes.ask_mcq.interrupt") as mock_interrupt:
+        mock_interrupt.return_value = {"kind": "answer", "index": 2}
+        result = ask_mcq(state)
+    mock_interrupt.assert_called_once_with({"type": "mcq", "content": mcq, "feedback": last_grade})
+    assert result["last_answer"]["index"] == 2
+
+
+def test_ask_mcq_parses_json_string_resume():
+    import json
+    mcq = _mcq_dict()
+    state = AgentState(messages=[], current_mcq=mcq, last_grade=None)
+    with patch("agent.nodes.ask_mcq.interrupt") as mock_interrupt:
+        mock_interrupt.return_value = json.dumps({"kind": "answer", "index": 3})
+        result = ask_mcq(state)
+    assert result["last_answer"] == {"kind": "answer", "index": 3}
