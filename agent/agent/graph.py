@@ -64,9 +64,15 @@ def approve(state: AgentState) -> dict:
     return {"revision_feedback": None}
 
 
+def route_after_approve(state: AgentState) -> str:
+    return "ingest_plan" if state.get("revision_feedback") else END
+
+
 def build_graph(checkpointer: Any = None):
     builder = StateGraph(AgentState)
     builder.add_node("ingest_plan", ingest_plan)
+    builder.add_node("approve", approve)
     builder.set_entry_point("ingest_plan")
-    builder.add_edge("ingest_plan", END)
+    builder.add_edge("ingest_plan", "approve")
+    builder.add_conditional_edges("approve", route_after_approve)
     return builder.compile(checkpointer=checkpointer)

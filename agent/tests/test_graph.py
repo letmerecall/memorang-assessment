@@ -1,7 +1,8 @@
 """Tests for AgentState and graph components."""
 from unittest.mock import patch, call
+from langgraph.graph import END
 from agent.state import AgentState
-from agent.graph import ingest_plan, build_graph, approve, _parse_resume, generate_plan
+from agent.graph import ingest_plan, build_graph, approve, _parse_resume, generate_plan, route_after_approve
 from agent.plan_schema import LessonPlan, LearningObjective
 
 
@@ -155,3 +156,19 @@ def test_generate_plan_no_feedback_omits_feedback_section():
         generate_plan("my content", feedback=None)
     prompt_arg = mock_instance.invoke.call_args[0][0]
     assert "Previous feedback" not in prompt_arg
+
+
+def test_route_after_approve_routes_to_ingest_plan_when_feedback_set():
+    state = AgentState(messages=[], revision_feedback="more examples please")
+    assert route_after_approve(state) == "ingest_plan"
+
+
+def test_route_after_approve_routes_to_end_when_no_feedback():
+    state = AgentState(messages=[], revision_feedback=None)
+    assert route_after_approve(state) == END
+
+
+def test_graph_has_approve_node():
+    from langgraph.checkpoint.memory import MemorySaver
+    graph = build_graph(checkpointer=MemorySaver())
+    assert "approve" in graph.get_graph().nodes
