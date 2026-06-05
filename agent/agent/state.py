@@ -2,5 +2,6 @@ from typing import Optional
 from copilotkit import CopilotKitState
 
 
-class SpikeState(CopilotKitState):
-    echo: Optional[str] = ""
+class AgentState(CopilotKitState):
+    pdf_text: Optional[str] = None
+    lesson_plan: Optional[dict] = None

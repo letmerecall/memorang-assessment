@@ -10,7 +10,7 @@ const agent = new LangGraphHttpAgent({
 });
 
 const runtime = new CopilotRuntime({
-  agents: { spike_agent: agent },
+  agents: { learning_agent: agent },
   runner: new InMemoryAgentRunner(),
 });
 

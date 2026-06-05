@@ -8,12 +8,13 @@ for _p in (Path(__file__).parent.parent.parent / ".env", Path(".env")):
         load_dotenv(_p)
         break
 
-from fastapi import FastAPI
+from fastapi import FastAPI, File, HTTPException, UploadFile
 import uvicorn
 from copilotkit import LangGraphAGUIAgent
 from ag_ui_langgraph import add_langgraph_fastapi_endpoint
 
 from agent.graph import build_graph
+from agent.pdf import extract_text, trim_to_budget, NoExtractableTextError
 
 
 @asynccontextmanager
@@ -40,8 +41,8 @@ async def lifespan(app: FastAPI):
     add_langgraph_fastapi_endpoint(
         app=app,
         agent=LangGraphAGUIAgent(
-            name="spike_agent",
-            description="Disposable integration spike agent.",
+            name="learning_agent",
+            description="AI learning agent — generates lesson plans from PDFs.",
             graph=graph,
         ),
         path="/",
@@ -59,6 +60,16 @@ app = FastAPI(lifespan=lifespan)
 @app.get("/health")
 async def health():
     return {"status": "ok"}
+
+
+@app.post("/extract")
+async def extract(file: UploadFile = File(...)):
+    file_bytes = await file.read()
+    try:
+        text = extract_text(file_bytes)
+    except NoExtractableTextError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    return {"text": trim_to_budget(text)}
 
 
 def main():

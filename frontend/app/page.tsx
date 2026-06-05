@@ -1,40 +1,36 @@
 "use client";
 
-import { useEffect } from "react";
 import { useAgent } from "@copilotkit/react-core/v2";
-import { EchoInterrupt } from "@/components/EchoInterrupt";
+import { PdfUpload } from "@/components/PdfUpload";
+import { LessonPlan } from "@/components/LessonPlan";
 
-export default function SpikePage() {
-  const { agent } = useAgent({ agentId: "spike_agent" });
+type LessonPlanData = {
+  objectives: { title: string; description: string; difficulty: "beginner" | "intermediate" | "advanced" }[];
+};
 
-  // Re-run when agent switches from provisional (pre-info) to the real shared instance.
-  // useAgent returns a provisional agent before /api/copilotkit/info responds;
-  // EchoInterrupt's useInterrupt gets a different provisional instance, so events
-  // from a run on the provisional agent never reach that subscription. By depending
-  // on `agent`, we re-fire once the real shared agent is available and both hooks
-  // point at the same object.
-  useEffect(() => {
-    if (!agent.isRunning) {
-      agent.setState({ echo: "" });
-      agent.runAgent();
-    }
-  }, [agent]);
+export default function HomePage() {
+  const { agent } = useAgent({ agentId: "learning_agent" });
+  const plan = (agent.state as { lesson_plan?: LessonPlanData })?.lesson_plan ?? null;
 
   return (
     <div className="flex min-h-screen flex-col items-center bg-gray-50 py-16 px-4">
-      <h1 className="mb-2 text-2xl font-semibold">
-        Spike — interrupt round-trip
-      </h1>
-      <p className="mb-8 text-sm text-gray-500">
-        {agent.isRunning ? "Agent is running…" : "Agent idle"}
+      <h1 className="mb-2 text-2xl font-semibold">AI Learning Agent</h1>
+      <p className="mb-2 text-sm text-gray-500">
+        Upload a PDF to generate a lesson plan.
+      </p>
+      <p className="text-xs text-gray-400">
+        {agent.isRunning ? "Generating…" : plan ? "Done" : "Idle"}
       </p>
 
-      {agent.state?.echo ? (
-        <div className="rounded border border-green-300 bg-green-50 p-4 text-green-800">
-          ✓ Echo received: <strong>{agent.state.echo}</strong>
-        </div>
-      ) : (
-        <EchoInterrupt />
+      {!plan && <PdfUpload />}
+      {plan && <LessonPlan plan={plan} />}
+      {plan && (
+        <button
+          onClick={() => agent.setState({ pdf_text: null, lesson_plan: null })}
+          className="mt-6 text-xs text-gray-400 hover:text-gray-600 underline"
+        >
+          Upload another PDF
+        </button>
       )}
     </div>
   );

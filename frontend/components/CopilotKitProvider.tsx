@@ -9,7 +9,7 @@ export function CopilotKitProvider({
   children: React.ReactNode;
 }) {
   return (
-    <CopilotKit runtimeUrl="/api/copilotkit" agent="spike_agent" useSingleEndpoint={false}>
+    <CopilotKit runtimeUrl="/api/copilotkit" agent="learning_agent" useSingleEndpoint={false}>
       {children}
     </CopilotKit>
   );
