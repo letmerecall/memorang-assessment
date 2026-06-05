@@ -54,11 +54,11 @@ export default function HomePage() {
 
       {summaryWidget}
 
-      {!anyWidget && plan && (
+      {!anyWidget && !agent.isRunning && plan && (
         <LessonPlan plan={plan} />
       )}
 
-      {!anyWidget && plan && (
+      {!anyWidget && !agent.isRunning && plan && (
         <button
           onClick={() =>
             agent.setState({
