@@ -1,4 +1,3 @@
-from langgraph.graph import END
 from langgraph.types import interrupt
 
 from agent.state import AgentState
@@ -15,4 +14,4 @@ def approve(state: AgentState) -> dict:
 
 
 def route_after_approve(state: AgentState) -> str:
-    return "ingest_plan" if state.get("revision_feedback") else END
+    return "ingest_plan" if state.get("revision_feedback") else "generate_mcq"

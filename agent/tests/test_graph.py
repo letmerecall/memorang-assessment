@@ -167,9 +167,9 @@ def test_route_after_approve_routes_to_ingest_plan_when_feedback_set():
     assert route_after_approve(state) == "ingest_plan"
 
 
-def test_route_after_approve_routes_to_end_when_no_feedback():
+def test_route_after_approve_routes_to_generate_mcq_when_no_feedback():
     state = AgentState(messages=[], revision_feedback=None)
-    assert route_after_approve(state) == END
+    assert route_after_approve(state) == "generate_mcq"
 
 
 def test_graph_has_approve_node():
