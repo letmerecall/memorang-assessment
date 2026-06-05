@@ -1,6 +1,8 @@
 """Tests for AgentState and graph components."""
-import pytest
+from unittest.mock import patch
 from agent.state import AgentState
+from agent.graph import ingest_plan, build_graph
+from agent.plan_schema import LessonPlan, LearningObjective
 
 
 def test_agent_state_defaults():
@@ -18,11 +20,6 @@ def test_agent_state_stores_lesson_plan():
     plan = {"objectives": []}
     state = AgentState(messages=[], lesson_plan=plan)
     assert state["lesson_plan"] == plan
-
-
-from unittest.mock import patch
-from agent.graph import ingest_plan, build_graph
-from agent.plan_schema import LessonPlan, LearningObjective
 
 
 def _mock_plan() -> LessonPlan:
