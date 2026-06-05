@@ -31,7 +31,7 @@ def build_graph(checkpointer: Any = None):
     builder.add_conditional_edges(
         "ask_mcq",
         route_mcq,
-        {"grade": "grade", "tutor": END},
+        {"grade": "grade", "tutor": END},  # "tutor" stub — node not yet implemented
     )
     builder.add_conditional_edges(
         "grade",
