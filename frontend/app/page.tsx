@@ -75,7 +75,16 @@ export default function HomePage() {
       {!approvalWidget && !mcqWidget && plan && (
         <button
           onClick={() =>
-            agent.setState({ pdf_text: null, lesson_plan: null })
+            agent.setState({
+              pdf_text: null,
+              lesson_plan: null,
+              current_idx: 0,
+              current_mcq: null,
+              attempts: 0,
+              results: null,
+              last_answer: null,
+              last_grade: null,
+            })
           }
           className="mt-6 text-xs text-gray-400 hover:text-gray-600 underline"
         >

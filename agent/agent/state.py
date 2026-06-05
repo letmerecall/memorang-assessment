@@ -9,6 +9,6 @@ class AgentState(CopilotKitState):
     current_idx: int = 0
     current_mcq: Optional[dict] = None
     attempts: int = 0
-    results: Optional[list] = None
+    results: Optional[list[dict]] = None
     last_answer: Optional[dict] = None
     last_grade: Optional[dict] = None

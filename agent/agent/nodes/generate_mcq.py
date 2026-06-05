@@ -2,7 +2,7 @@ import os
 
 from langchain_openai import ChatOpenAI
 
-from agent.mcq_schema import MCQ
+from agent.mcq_schema import MCQ, MCQGenerationError
 from agent.state import AgentState
 
 
@@ -29,7 +29,18 @@ def generate_mcq(state: AgentState) -> dict:
         f"Text:\n{pdf_text}"
     )
 
-    mcq = llm.invoke(prompt)
+    try:
+        mcq = llm.invoke(prompt)
+    except Exception as first_err:
+        retry_prompt = (
+            f"{prompt}\n\nYour previous response was invalid: {first_err}. "
+            "Ensure options has exactly 4 items and correct_index is between 0 and 3."
+        )
+        try:
+            mcq = llm.invoke(retry_prompt)
+        except Exception as second_err:
+            raise MCQGenerationError(str(second_err)) from second_err
+
     return {
         "current_mcq": mcq.model_dump(),
         "attempts": 0,
