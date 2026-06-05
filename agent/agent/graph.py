@@ -74,5 +74,9 @@ def build_graph(checkpointer: Any = None):
     builder.add_node("approve", approve)
     builder.set_entry_point("ingest_plan")
     builder.add_edge("ingest_plan", "approve")
-    builder.add_conditional_edges("approve", route_after_approve)
+    builder.add_conditional_edges(
+        "approve",
+        route_after_approve,
+        {"ingest_plan": "ingest_plan", END: END},
+    )
     return builder.compile(checkpointer=checkpointer)
