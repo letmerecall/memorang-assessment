@@ -37,7 +37,7 @@ cd memorang-assessment
 cp .env.example .env
 ```
 
-Edit `.env` and fill in your `OPENAI_API_KEY`. The other defaults work as-is with the included `docker-compose.yml`.
+Edit `.env` and fill in your OpenRouter API key (`OPENAI_API_KEY`). The other defaults work as-is with the included `docker-compose.yml`.
 
 ### 2. Start Postgres
 
@@ -116,7 +116,8 @@ docs/spike-notes.md   # proven CopilotKit/LangGraph symbol names & versions
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `OPENAI_API_KEY` | OpenAI API key | — (required) |
-| `OPENAI_MODEL` | Model to use | `gpt-4.1` |
+| `OPENAI_API_KEY` | OpenRouter API key | — (required) |
+| `OPENAI_BASE_URL` | LLM API base URL | `https://openrouter.ai/api/v1` |
+| `OPENAI_MODEL` | OpenRouter model slug | `openai/gpt-4.1` |
 | `DATABASE_URL` | Postgres connection string | `postgresql://memorang:memorang@localhost:5432/memorang` |
 | `AGENT_URL` | FastAPI base URL (used by Next.js) | `http://localhost:8123` |

@@ -11,8 +11,13 @@ from agent.state import AgentState
 
 
 def generate_plan(pdf_text: str, feedback: str | None = None) -> LessonPlan:
-    model = os.environ.get("OPENAI_MODEL", "gpt-4.1")
-    llm = ChatOpenAI(model=model, temperature=0).with_structured_output(LessonPlan)
+    model = os.environ.get("OPENAI_MODEL", "openai/gpt-4.1")
+    base_url = os.environ.get("OPENAI_BASE_URL", "https://openrouter.ai/api/v1")
+    llm = ChatOpenAI(
+        model=model,
+        temperature=0,
+        base_url=base_url,
+    ).with_structured_output(LessonPlan)
     prompt = (
         "Create a lesson plan from the following educational content. "
         "Return exactly 3 to 5 learning objectives, each with a title, "
