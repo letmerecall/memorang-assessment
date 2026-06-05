@@ -49,3 +49,13 @@ def test_graph_compiles_with_memory_checkpointer():
     from langgraph.checkpoint.memory import MemorySaver
     graph = build_graph(checkpointer=MemorySaver())
     assert graph is not None
+
+
+def test_agent_state_defaults_revision_feedback_to_none():
+    state = AgentState(messages=[])
+    assert state.get("revision_feedback") is None
+
+
+def test_agent_state_stores_revision_feedback():
+    state = AgentState(messages=[], revision_feedback="add more beginner content")
+    assert state["revision_feedback"] == "add more beginner content"
