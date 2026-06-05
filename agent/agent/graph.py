@@ -1,4 +1,3 @@
-import json
 import os
 from typing import Any
 
@@ -8,6 +7,7 @@ from langgraph.types import interrupt
 
 from agent.plan_schema import LessonPlan, PlanGenerationError
 from agent.state import AgentState
+from agent.utils import _parse_resume
 
 
 def generate_plan(pdf_text: str, feedback: str | None = None) -> LessonPlan:
@@ -47,17 +47,6 @@ def ingest_plan(state: AgentState) -> dict:
     feedback = state.get("revision_feedback")
     plan = generate_plan(pdf_text, feedback)
     return {"lesson_plan": plan.model_dump(), "revision_feedback": None}
-
-
-def _parse_resume(raw: Any) -> dict:
-    if isinstance(raw, str):
-        try:
-            return json.loads(raw)
-        except (json.JSONDecodeError, TypeError):
-            return {}
-    if isinstance(raw, dict):
-        return raw
-    return {}
 
 
 def approve(state: AgentState) -> dict:
