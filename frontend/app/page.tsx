@@ -44,7 +44,7 @@ export default function HomePage() {
 
   return (
     <div className="flex min-h-screen flex-col items-center bg-gray-50 py-16 px-4">
-      <h1 className="mb-2 text-2xl font-semibold">AI Learning Agent</h1>
+      <h1 className="mb-2 text-2xl font-semibold text-gray-900">AI Learning Agent</h1>
       <p className="mb-2 text-sm text-gray-500">
         Upload a PDF to generate a lesson plan.
       </p>
