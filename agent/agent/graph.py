@@ -10,7 +10,7 @@ from agent.plan_schema import LessonPlan, PlanGenerationError
 from agent.state import AgentState
 
 
-def generate_plan(pdf_text: str) -> LessonPlan:
+def generate_plan(pdf_text: str, feedback: str | None = None) -> LessonPlan:
     model = os.environ.get("OPENAI_MODEL", "gpt-4.1")
     llm = ChatOpenAI(model=model, temperature=0).with_structured_output(LessonPlan)
     prompt = (
@@ -19,6 +19,8 @@ def generate_plan(pdf_text: str) -> LessonPlan:
         "a one-sentence description, and a difficulty of beginner, intermediate, or advanced.\n\n"
         f"Content:\n{pdf_text}"
     )
+    if feedback:
+        prompt += f"\n\nPrevious feedback to incorporate: {feedback}"
     try:
         return llm.invoke(prompt)
     except Exception as first_err:
@@ -37,8 +39,9 @@ def ingest_plan(state: AgentState) -> dict:
     pdf_text = state.get("pdf_text")
     if not pdf_text:
         return {}
-    plan = generate_plan(pdf_text)
-    return {"lesson_plan": plan.model_dump()}
+    feedback = state.get("revision_feedback")
+    plan = generate_plan(pdf_text, feedback)
+    return {"lesson_plan": plan.model_dump(), "revision_feedback": None}
 
 
 def _parse_resume(raw: Any) -> dict:

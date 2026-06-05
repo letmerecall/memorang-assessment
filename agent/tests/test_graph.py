@@ -1,7 +1,7 @@
 """Tests for AgentState and graph components."""
 from unittest.mock import patch, call
 from agent.state import AgentState
-from agent.graph import ingest_plan, build_graph, approve, _parse_resume
+from agent.graph import ingest_plan, build_graph, approve, _parse_resume, generate_plan
 from agent.plan_schema import LessonPlan, LearningObjective
 
 
@@ -114,3 +114,44 @@ def test_approve_empty_feedback_defaults_to_empty_string():
     with patch("agent.graph.interrupt", return_value={"decision": "revise"}):
         result = approve(state)
     assert result == {"revision_feedback": ""}
+
+
+def test_ingest_plan_passes_feedback_to_generate_plan():
+    state = AgentState(messages=[], pdf_text="some content", revision_feedback="add more detail")
+    with patch("agent.graph.generate_plan") as mock_gen:
+        mock_gen.return_value = _mock_plan()
+        ingest_plan(state)
+    mock_gen.assert_called_once_with("some content", "add more detail")
+
+
+def test_ingest_plan_passes_none_feedback_when_not_set():
+    state = AgentState(messages=[], pdf_text="some content", revision_feedback=None)
+    with patch("agent.graph.generate_plan") as mock_gen:
+        mock_gen.return_value = _mock_plan()
+        ingest_plan(state)
+    mock_gen.assert_called_once_with("some content", None)
+
+
+def test_ingest_plan_clears_revision_feedback():
+    state = AgentState(messages=[], pdf_text="some content", revision_feedback="old feedback")
+    with patch("agent.graph.generate_plan", return_value=_mock_plan()):
+        result = ingest_plan(state)
+    assert result["revision_feedback"] is None
+
+
+def test_generate_plan_includes_feedback_in_prompt():
+    with patch("agent.graph.ChatOpenAI") as MockLLM:
+        mock_instance = MockLLM.return_value.with_structured_output.return_value
+        mock_instance.invoke.return_value = _mock_plan()
+        generate_plan("my content", feedback="add beginner objectives")
+    prompt_arg = mock_instance.invoke.call_args[0][0]
+    assert "add beginner objectives" in prompt_arg
+
+
+def test_generate_plan_no_feedback_omits_feedback_section():
+    with patch("agent.graph.ChatOpenAI") as MockLLM:
+        mock_instance = MockLLM.return_value.with_structured_output.return_value
+        mock_instance.invoke.return_value = _mock_plan()
+        generate_plan("my content", feedback=None)
+    prompt_arg = mock_instance.invoke.call_args[0][0]
+    assert "Previous feedback" not in prompt_arg
