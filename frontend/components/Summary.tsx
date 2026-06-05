@@ -1,5 +1,6 @@
 "use client";
 
+import ReactMarkdown from "react-markdown";
 import { useInterrupt } from "@copilotkit/react-core/v2";
 
 type SummaryResult = {
@@ -66,7 +67,21 @@ function SummaryCard({ content, onDone }: SummaryCardProps) {
       {content.tips && (
         <div className="border-t border-blue-200 pt-4 mb-4">
           <h3 className="text-sm font-semibold text-blue-800 mb-2">Study Tips</h3>
-          <p className="text-sm text-gray-700 whitespace-pre-wrap">{content.tips}</p>
+          <ReactMarkdown
+            components={{
+              p: ({ children }) => <p className="text-sm text-gray-700 mb-2 last:mb-0">{children}</p>,
+              strong: ({ children }) => <strong className="font-semibold text-gray-800">{children}</strong>,
+              em: ({ children }) => <em className="italic">{children}</em>,
+              ul: ({ children }) => <ul className="list-disc list-inside text-sm text-gray-700 mb-2 space-y-1">{children}</ul>,
+              ol: ({ children }) => <ol className="list-decimal list-inside text-sm text-gray-700 mb-2 space-y-1">{children}</ol>,
+              li: ({ children }) => <li className="text-sm text-gray-700">{children}</li>,
+              h1: ({ children }) => <h4 className="text-sm font-semibold text-gray-800 mb-1">{children}</h4>,
+              h2: ({ children }) => <h4 className="text-sm font-semibold text-gray-800 mb-1">{children}</h4>,
+              h3: ({ children }) => <h4 className="text-sm font-semibold text-gray-800 mb-1">{children}</h4>,
+            }}
+          >
+            {content.tips}
+          </ReactMarkdown>
         </div>
       )}
 
