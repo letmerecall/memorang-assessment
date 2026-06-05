@@ -76,6 +76,10 @@ await agent.runAgent();               // programmatic start (no chat message)
 // useInterrupt — renders custom widget for interrupt payloads
 // renderInChat: false → returns element for manual placement
 //
+// ⚠️  agentId MUST be passed explicitly — the default resolves to the literal
+// string "default", NOT the agent name from the <CopilotKit agent="..."> prop.
+// Always pass agentId: "learning_agent" (or whatever your agent is named).
+//
 // ⚠️  ag_ui_langgraph serializes the Python interrupt dict to a JSON *string*
 // in the CUSTOM event's `value` field.  event.value is NOT a plain object —
 // you must parse it before accessing fields:

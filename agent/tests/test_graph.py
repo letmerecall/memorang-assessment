@@ -1,7 +1,8 @@
 """Tests for AgentState and graph components."""
-from unittest.mock import patch
+from unittest.mock import patch, call
+from langgraph.graph import END
 from agent.state import AgentState
-from agent.graph import ingest_plan, build_graph
+from agent.graph import ingest_plan, build_graph, approve, _parse_resume, generate_plan, route_after_approve
 from agent.plan_schema import LessonPlan, LearningObjective
 
 
@@ -49,3 +50,125 @@ def test_graph_compiles_with_memory_checkpointer():
     from langgraph.checkpoint.memory import MemorySaver
     graph = build_graph(checkpointer=MemorySaver())
     assert graph is not None
+
+
+def test_agent_state_defaults_revision_feedback_to_none():
+    state = AgentState(messages=[])
+    assert state.get("revision_feedback") is None
+
+
+def test_agent_state_stores_revision_feedback():
+    state = AgentState(messages=[], revision_feedback="add more beginner content")
+    assert state["revision_feedback"] == "add more beginner content"
+
+
+def test_parse_resume_dict_passthrough():
+    assert _parse_resume({"decision": "approve"}) == {"decision": "approve"}
+
+
+def test_parse_resume_json_string():
+    import json
+    assert _parse_resume(json.dumps({"decision": "revise", "feedback": "more"})) == {
+        "decision": "revise",
+        "feedback": "more",
+    }
+
+
+def test_parse_resume_invalid_returns_empty():
+    assert _parse_resume("not-json") == {}
+    assert _parse_resume(None) == {}
+
+
+def test_approve_calls_interrupt_with_plan_payload():
+    plan = {"objectives": [{"title": "T", "description": "D", "difficulty": "beginner"}]}
+    state = AgentState(messages=[], lesson_plan=plan)
+    with patch("agent.graph.interrupt") as mock_interrupt:
+        mock_interrupt.return_value = {"decision": "approve"}
+        approve(state)
+    mock_interrupt.assert_called_once_with({"type": "plan_approval", "content": plan})
+
+
+def test_approve_returns_none_feedback_on_approve():
+    state = AgentState(messages=[], lesson_plan={"objectives": []})
+    with patch("agent.graph.interrupt", return_value={"decision": "approve"}):
+        result = approve(state)
+    assert result == {"revision_feedback": None}
+
+
+def test_approve_returns_feedback_on_revise():
+    state = AgentState(messages=[], lesson_plan={"objectives": []})
+    with patch("agent.graph.interrupt", return_value={"decision": "revise", "feedback": "add diagrams"}):
+        result = approve(state)
+    assert result == {"revision_feedback": "add diagrams"}
+
+
+def test_approve_handles_json_string_resume():
+    import json
+    state = AgentState(messages=[], lesson_plan={"objectives": []})
+    with patch("agent.graph.interrupt", return_value=json.dumps({"decision": "revise", "feedback": "simpler"})):
+        result = approve(state)
+    assert result == {"revision_feedback": "simpler"}
+
+
+def test_approve_empty_feedback_defaults_to_empty_string():
+    state = AgentState(messages=[], lesson_plan={"objectives": []})
+    with patch("agent.graph.interrupt", return_value={"decision": "revise"}):
+        result = approve(state)
+    assert result == {"revision_feedback": ""}
+
+
+def test_ingest_plan_passes_feedback_to_generate_plan():
+    state = AgentState(messages=[], pdf_text="some content", revision_feedback="add more detail")
+    with patch("agent.graph.generate_plan") as mock_gen:
+        mock_gen.return_value = _mock_plan()
+        ingest_plan(state)
+    mock_gen.assert_called_once_with("some content", "add more detail")
+
+
+def test_ingest_plan_passes_none_feedback_when_not_set():
+    state = AgentState(messages=[], pdf_text="some content", revision_feedback=None)
+    with patch("agent.graph.generate_plan") as mock_gen:
+        mock_gen.return_value = _mock_plan()
+        ingest_plan(state)
+    mock_gen.assert_called_once_with("some content", None)
+
+
+def test_ingest_plan_clears_revision_feedback():
+    state = AgentState(messages=[], pdf_text="some content", revision_feedback="old feedback")
+    with patch("agent.graph.generate_plan", return_value=_mock_plan()):
+        result = ingest_plan(state)
+    assert result["revision_feedback"] is None
+
+
+def test_generate_plan_includes_feedback_in_prompt():
+    with patch("agent.graph.ChatOpenAI") as MockLLM:
+        mock_instance = MockLLM.return_value.with_structured_output.return_value
+        mock_instance.invoke.return_value = _mock_plan()
+        generate_plan("my content", feedback="add beginner objectives")
+    prompt_arg = mock_instance.invoke.call_args[0][0]
+    assert "add beginner objectives" in prompt_arg
+
+
+def test_generate_plan_no_feedback_omits_feedback_section():
+    with patch("agent.graph.ChatOpenAI") as MockLLM:
+        mock_instance = MockLLM.return_value.with_structured_output.return_value
+        mock_instance.invoke.return_value = _mock_plan()
+        generate_plan("my content", feedback=None)
+    prompt_arg = mock_instance.invoke.call_args[0][0]
+    assert "Previous feedback" not in prompt_arg
+
+
+def test_route_after_approve_routes_to_ingest_plan_when_feedback_set():
+    state = AgentState(messages=[], revision_feedback="more examples please")
+    assert route_after_approve(state) == "ingest_plan"
+
+
+def test_route_after_approve_routes_to_end_when_no_feedback():
+    state = AgentState(messages=[], revision_feedback=None)
+    assert route_after_approve(state) == END
+
+
+def test_graph_has_approve_node():
+    from langgraph.checkpoint.memory import MemorySaver
+    graph = build_graph(checkpointer=MemorySaver())
+    assert "approve" in graph.get_graph().nodes
