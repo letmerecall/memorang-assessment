@@ -15,6 +15,7 @@ def grade(state: AgentState) -> dict:
             objective=objective_title,
             correct_first_try=(attempts == 1),
             attempts=attempts,
+            # TODO: set asked_tutor=True here once the tutor node is wired in and resumes back to grade
         )
         existing = list(state.get("results") or [])
         existing.append(result.model_dump())
