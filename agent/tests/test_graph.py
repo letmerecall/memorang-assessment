@@ -4,6 +4,7 @@ from langgraph.graph import END
 from agent.state import AgentState
 from agent.graph import ingest_plan, build_graph, approve, _parse_resume, generate_plan, route_after_approve
 from agent.plan_schema import LessonPlan, LearningObjective
+from agent.nodes.grade import grade, route_mcq, route_after_grade
 
 
 def test_agent_state_defaults():
@@ -172,3 +173,129 @@ def test_graph_has_approve_node():
     from langgraph.checkpoint.memory import MemorySaver
     graph = build_graph(checkpointer=MemorySaver())
     assert "approve" in graph.get_graph().nodes
+
+
+# ── grade ──────────────────────────────────────────────────────────────
+
+def _mcq_dict():
+    return {
+        "question": "Q?",
+        "options": ["A", "B", "C", "D"],
+        "correct_index": 2,
+        "explanation": "Because C.",
+        "hint": "Think about C.",
+        "source_quote": "C is correct.",
+    }
+
+
+def _plan_with_one_objective():
+    return {
+        "objectives": [
+            {"title": "Topic A", "description": "Learn A.", "difficulty": "beginner"}
+        ]
+    }
+
+
+def test_grade_correct_first_attempt():
+    state = AgentState(
+        messages=[],
+        lesson_plan=_plan_with_one_objective(),
+        current_idx=0,
+        current_mcq=_mcq_dict(),
+        attempts=0,
+        results=None,
+        last_answer={"kind": "answer", "index": 2},
+    )
+    result = grade(state)
+    assert result["last_grade"]["correct"] is True
+    assert result["last_grade"]["explanation"] == "Because C."
+    assert result["last_grade"]["source_quote"] == "C is correct."
+    assert result["attempts"] == 1
+    assert result["current_idx"] == 1
+    assert len(result["results"]) == 1
+    assert result["results"][0]["correct_first_try"] is True
+    assert result["results"][0]["attempts"] == 1
+    assert result["results"][0]["objective"] == "Topic A"
+
+
+def test_grade_incorrect_first_attempt():
+    state = AgentState(
+        messages=[],
+        lesson_plan=_plan_with_one_objective(),
+        current_idx=0,
+        current_mcq=_mcq_dict(),
+        attempts=0,
+        results=None,
+        last_answer={"kind": "answer", "index": 0},
+    )
+    result = grade(state)
+    assert result["last_grade"]["correct"] is False
+    assert result["last_grade"]["hint"] == "Think about C."
+    assert result["attempts"] == 1
+    assert "results" not in result
+    assert "current_idx" not in result
+
+
+def test_grade_correct_second_attempt_not_first_try():
+    state = AgentState(
+        messages=[],
+        lesson_plan=_plan_with_one_objective(),
+        current_idx=0,
+        current_mcq=_mcq_dict(),
+        attempts=1,
+        results=None,
+        last_answer={"kind": "answer", "index": 2},
+    )
+    result = grade(state)
+    assert result["results"][0]["correct_first_try"] is False
+    assert result["results"][0]["attempts"] == 2
+
+
+def test_grade_appends_to_existing_results():
+    existing = [{"objective": "Old", "correct_first_try": True, "attempts": 1}]
+    state = AgentState(
+        messages=[],
+        lesson_plan=_plan_with_one_objective(),
+        current_idx=0,
+        current_mcq=_mcq_dict(),
+        attempts=0,
+        results=existing,
+        last_answer={"kind": "answer", "index": 2},
+    )
+    result = grade(state)
+    assert len(result["results"]) == 2
+
+
+# ── route_mcq ──────────────────────────────────────────────────────────
+
+def test_route_mcq_answer_routes_to_grade():
+    state = AgentState(messages=[], last_answer={"kind": "answer", "index": 1})
+    assert route_mcq(state) == "grade"
+
+
+def test_route_mcq_question_routes_to_tutor():
+    state = AgentState(messages=[], last_answer={"kind": "question", "text": "help me"})
+    assert route_mcq(state) == "tutor"
+
+
+def test_route_mcq_missing_kind_defaults_to_grade():
+    state = AgentState(messages=[], last_answer={"index": 1})
+    assert route_mcq(state) == "grade"
+
+
+# ── route_after_grade ──────────────────────────────────────────────────
+
+def test_route_after_grade_correct_routes_to_end():
+    state = AgentState(
+        messages=[],
+        last_grade={"correct": True, "explanation": "...", "source_quote": "..."},
+    )
+    assert route_after_grade(state) == END
+
+
+def test_route_after_grade_incorrect_routes_to_ask_mcq():
+    state = AgentState(
+        messages=[],
+        last_grade={"correct": False, "hint": "Think again."},
+    )
+    assert route_after_grade(state) == "ask_mcq"
