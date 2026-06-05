@@ -5,8 +5,8 @@ from agent.state import AgentState
 
 def test_agent_state_defaults():
     state = AgentState(messages=[])
-    assert state["pdf_text"] is None
-    assert state["lesson_plan"] is None
+    assert state.get("pdf_text") is None
+    assert state.get("lesson_plan") is None
 
 
 def test_agent_state_stores_pdf_text():
