@@ -3,5 +3,5 @@ from copilotkit import CopilotKitState
 
 
 class AgentState(CopilotKitState):
-    pdf_text: Optional[str]
-    lesson_plan: Optional[dict]
+    pdf_text: Optional[str] = None
+    lesson_plan: Optional[dict] = None
