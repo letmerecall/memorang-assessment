@@ -16,7 +16,7 @@ type SummaryContent = {
 };
 
 type SummaryPayload = {
-  type: string;
+  type: "summary";
   content: SummaryContent;
 };
 
@@ -47,9 +47,12 @@ function SummaryCard({ content, onDone }: SummaryCardProps) {
       <p className="text-4xl font-bold text-blue-700 mb-6">{pct}%</p>
 
       <div className="mb-4 space-y-1">
-        {content.results.map((r, i) => (
-          <div key={i} className="flex items-center gap-2">
-            <span className={r.correct_first_try ? "text-green-600" : "text-orange-500"}>
+        {content.results.map((r) => (
+          <div key={r.objective} className="flex items-center gap-2">
+            <span
+              className={r.correct_first_try ? "text-green-600" : "text-orange-500"}
+              aria-label={r.correct_first_try ? "Correct" : "Incorrect"}
+            >
               {r.correct_first_try ? "✓" : "✗"}
             </span>
             <span className="text-sm text-gray-700">{r.objective}</span>
