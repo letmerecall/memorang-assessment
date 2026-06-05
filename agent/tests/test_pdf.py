@@ -24,6 +24,11 @@ def test_extract_text_raises_for_blank_page():
         extract_text(pdf_bytes)
 
 
+def test_extract_text_raises_for_non_pdf_bytes():
+    with pytest.raises(NoExtractableTextError, match="could not open file as PDF"):
+        extract_text(b"this is not a pdf")
+
+
 def test_trim_to_budget_truncates_long_text():
     long_text = "a" * 100_000
     result = trim_to_budget(long_text, max_chars=80_000)

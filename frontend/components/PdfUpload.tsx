@@ -22,7 +22,11 @@ export function PdfUpload() {
         return;
       }
       agent.setState({ pdf_text: data.text, lesson_plan: null });
-      await agent.runAgent();
+      try {
+        await agent.runAgent();
+      } catch {
+        setError("Could not generate a lesson plan. Please try a different PDF.");
+      }
     } catch {
       setError("Network error — is the agent server running?");
     } finally {
