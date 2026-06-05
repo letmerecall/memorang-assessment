@@ -178,6 +178,12 @@ def test_graph_has_approve_node():
     assert "approve" in graph.get_graph().nodes
 
 
+def test_graph_has_summary_node():
+    from langgraph.checkpoint.memory import MemorySaver
+    graph = build_graph(checkpointer=MemorySaver())
+    assert "summary" in graph.get_graph().nodes
+
+
 # ── grade ──────────────────────────────────────────────────────────────
 
 def _mcq_dict():
