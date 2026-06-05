@@ -1,9 +1,7 @@
 """Smoke tests for FastAPI endpoints. LLM calls are mocked."""
 import fitz
-from unittest.mock import patch
 from fastapi.testclient import TestClient
 from agent.server import app
-from agent.plan_schema import LessonPlan, LearningObjective
 
 
 def _pdf_bytes(text: str | None = None) -> bytes:
