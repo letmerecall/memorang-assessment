@@ -1,0 +1,43 @@
+# Environment — never commit secrets
+.env
+.env.local
+.env.*.local
+.env\ copy*
+
+# Python
+agent/.venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+dist/
+*.egg-info/
+*.egg
+
+# uv
+uv.lock
+
+# Frontend (root-level fallback; frontend/.gitignore covers the subdir)
+node_modules/
+.next/
+out/
+build/
+coverage/
+*.tsbuildinfo
+next-env.d.ts
+
+# Docker volumes
+postgres_data/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editors
+.vscode/
+.idea/
+*.swp
+*.swo
