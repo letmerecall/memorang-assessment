@@ -6,6 +6,7 @@ from agent.plan_schema import LessonPlan, LearningObjective
 from agent.nodes.grade import grade, route_mcq, route_after_grade
 from agent.nodes.ask_mcq import ask_mcq
 from agent.nodes.generate_mcq import generate_mcq
+from agent.nodes.summary import summary
 from agent.mcq_schema import MCQ
 
 
@@ -429,8 +430,6 @@ def test_generate_mcq_includes_objective_and_pdf_in_prompt():
 
 # ── summary ────────────────────────────────────────────────────────────
 
-from agent.nodes.summary import summary
-
 
 def _three_results(*, weak_idx: int | None = None) -> list[dict]:
     results = []
@@ -516,3 +515,18 @@ def test_summary_results_passed_through_in_payload():
         summary(state)
     payload = mock_interrupt.call_args[0][0]
     assert payload["content"]["results"] == results
+
+
+def test_summary_empty_results_returns_zero_score():
+    state = AgentState(
+        messages=[],
+        results=None,
+        pdf_text="content",
+        lesson_plan={"objectives": []},
+    )
+    with patch("agent.nodes.summary.interrupt") as mock_interrupt, \
+         patch("agent.nodes.summary.ChatOpenAI") as MockLLM:
+        summary(state)
+    MockLLM.assert_not_called()
+    payload = mock_interrupt.call_args[0][0]
+    assert payload["content"]["score"] == 0.0
