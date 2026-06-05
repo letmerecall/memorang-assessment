@@ -40,6 +40,7 @@ export function useLessonPlanApproval() {
   const [feedback, setFeedback] = useState("");
 
   return useInterrupt({
+    agentId: "learning_agent",
     renderInChat: false,
     enabled: (event) =>
       parseInterruptValue(event.value)?.type === "plan_approval",
