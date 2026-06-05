@@ -45,3 +45,13 @@ def test_mcq_result_valid():
     r = MCQResult(objective="Topic A", correct_first_try=True, attempts=1)
     assert r.correct_first_try is True
     assert r.attempts == 1
+
+
+def test_mcq_result_asked_tutor_defaults_to_false():
+    r = MCQResult(objective="T", correct_first_try=True, attempts=1)
+    assert r.asked_tutor is False
+
+
+def test_mcq_result_asked_tutor_can_be_set():
+    r = MCQResult(objective="T", correct_first_try=False, attempts=2, asked_tutor=True)
+    assert r.asked_tutor is True

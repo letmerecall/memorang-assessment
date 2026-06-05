@@ -14,6 +14,7 @@ class MCQResult(BaseModel):
     objective: str
     correct_first_try: bool
     attempts: int
+    asked_tutor: bool = False
 
 
 class MCQGenerationError(RuntimeError):
