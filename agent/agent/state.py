@@ -6,3 +6,9 @@ class AgentState(CopilotKitState):
     pdf_text: Optional[str] = None
     lesson_plan: Optional[dict] = None
     revision_feedback: Optional[str] = None
+    current_idx: int = 0
+    current_mcq: Optional[dict] = None
+    attempts: int = 0
+    results: Optional[list] = None
+    last_answer: Optional[dict] = None
+    last_grade: Optional[dict] = None
