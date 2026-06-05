@@ -23,7 +23,7 @@ def _generate_tips(weak_objectives: list[str], pdf_text: str) -> str:
         try:
             return llm.invoke(prompt).content
         except Exception as second_err:
-            raise RuntimeError(str(second_err)) from second_err
+            raise RuntimeError(str(second_err)) from first_err
 
 
 def summary(state: AgentState) -> dict:
