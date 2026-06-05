@@ -1,10 +1,13 @@
+import json
 import os
 from typing import Any
-from langgraph.graph import StateGraph, END
-from langchain_openai import ChatOpenAI
 
-from agent.state import AgentState
+from langchain_openai import ChatOpenAI
+from langgraph.graph import StateGraph, END
+from langgraph.types import interrupt
+
 from agent.plan_schema import LessonPlan, PlanGenerationError
+from agent.state import AgentState
 
 
 def generate_plan(pdf_text: str) -> LessonPlan:
@@ -36,6 +39,26 @@ def ingest_plan(state: AgentState) -> dict:
         return {}
     plan = generate_plan(pdf_text)
     return {"lesson_plan": plan.model_dump()}
+
+
+def _parse_resume(raw: Any) -> dict:
+    if isinstance(raw, str):
+        try:
+            return json.loads(raw)
+        except (json.JSONDecodeError, TypeError):
+            return {}
+    if isinstance(raw, dict):
+        return raw
+    return {}
+
+
+def approve(state: AgentState) -> dict:
+    plan = state.get("lesson_plan")
+    raw = interrupt({"type": "plan_approval", "content": plan})
+    decision = _parse_resume(raw)
+    if decision.get("decision") == "revise":
+        return {"revision_feedback": decision.get("feedback", "")}
+    return {"revision_feedback": None}
 
 
 def build_graph(checkpointer: Any = None):
