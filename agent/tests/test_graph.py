@@ -6,6 +6,8 @@ from agent.graph import ingest_plan, build_graph, approve, _parse_resume, genera
 from agent.plan_schema import LessonPlan, LearningObjective
 from agent.nodes.grade import grade, route_mcq, route_after_grade
 from agent.nodes.ask_mcq import ask_mcq
+from agent.nodes.generate_mcq import generate_mcq
+from agent.mcq_schema import MCQ
 
 
 def test_agent_state_defaults():
@@ -333,3 +335,62 @@ def test_ask_mcq_parses_json_string_resume():
         mock_interrupt.return_value = json.dumps({"kind": "answer", "index": 3})
         result = ask_mcq(state)
     assert result["last_answer"] == {"kind": "answer", "index": 3}
+
+
+# ── generate_mcq ───────────────────────────────────────────────────────
+
+def _mock_mcq_model():
+    return MCQ(
+        question="Q?",
+        options=["A", "B", "C", "D"],
+        correct_index=1,
+        explanation="Exp.",
+        hint="Hint.",
+        source_quote="Quote.",
+    )
+
+
+def test_generate_mcq_resets_attempts_and_clears_last_grade():
+    state = AgentState(
+        messages=[],
+        pdf_text="some educational text",
+        lesson_plan={
+            "objectives": [
+                {"title": "Topic A", "description": "Learn A.", "difficulty": "beginner"}
+            ]
+        },
+        current_idx=0,
+        attempts=3,
+        last_grade={"correct": False, "hint": "old hint"},
+    )
+    with patch("agent.nodes.generate_mcq.ChatOpenAI") as MockLLM:
+        mock_instance = MockLLM.return_value.with_structured_output.return_value
+        mock_instance.invoke.return_value = _mock_mcq_model()
+        result = generate_mcq(state)
+    assert result["attempts"] == 0
+    assert result["last_grade"] is None
+    assert result["current_mcq"]["question"] == "Q?"
+    assert result["current_mcq"]["options"] == ["A", "B", "C", "D"]
+    assert result["current_mcq"]["correct_index"] == 1
+
+
+def test_generate_mcq_includes_objective_and_pdf_in_prompt():
+    state = AgentState(
+        messages=[],
+        pdf_text="the content",
+        lesson_plan={
+            "objectives": [
+                {"title": "Topic A", "description": "Learn A.", "difficulty": "beginner"}
+            ]
+        },
+        current_idx=0,
+        attempts=0,
+        last_grade=None,
+    )
+    with patch("agent.nodes.generate_mcq.ChatOpenAI") as MockLLM:
+        mock_instance = MockLLM.return_value.with_structured_output.return_value
+        mock_instance.invoke.return_value = _mock_mcq_model()
+        generate_mcq(state)
+    prompt = mock_instance.invoke.call_args[0][0]
+    assert "Topic A" in prompt
+    assert "the content" in prompt
