@@ -97,9 +97,9 @@ export default function HomePage() {
 
   return (
     <div className="flex min-h-screen bg-gray-50">
-      {showSidebar && (
+      {showSidebar && plan && (
         <ProgressSidebar
-          objectives={plan!.objectives}
+          objectives={plan.objectives}
           currentIdx={currentIdx}
         />
       )}
