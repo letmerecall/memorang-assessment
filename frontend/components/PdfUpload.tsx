@@ -3,7 +3,7 @@
 import { useRef, useState } from "react";
 import { useAgent } from "@copilotkit/react-core/v2";
 
-export function PdfUpload() {
+export function PdfUpload({ onRunStarted }: { onRunStarted?: (threadId: string) => void }) {
   const { agent } = useAgent({ agentId: "learning_agent" });
   const inputRef = useRef<HTMLInputElement>(null);
   const [error, setError] = useState<string | null>(null);
@@ -22,6 +22,7 @@ export function PdfUpload() {
         return;
       }
       agent.setState({ pdf_text: data.text, lesson_plan: null });
+      onRunStarted?.(agent.threadId);
       try {
         await agent.runAgent();
       } catch {
