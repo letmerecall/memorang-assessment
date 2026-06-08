@@ -39,9 +39,10 @@ function parseInterruptValue(raw: unknown): PlanApprovalPayload | null {
 type PlanApprovalFormProps = {
   objectives: Objective[];
   resolve: (response: unknown) => void;
+  onDecision?: (decision: "approve" | "revise") => void;
 };
 
-function PlanApprovalForm({ objectives, resolve }: PlanApprovalFormProps) {
+function PlanApprovalForm({ objectives, resolve, onDecision }: PlanApprovalFormProps) {
   const [feedback, setFeedback] = useState("");
 
   return (
@@ -72,7 +73,10 @@ function PlanApprovalForm({ objectives, resolve }: PlanApprovalFormProps) {
 
       <div className="flex flex-col gap-3">
         <button
-          onClick={() => resolve({ decision: "approve" })}
+          onClick={() => {
+            onDecision?.("approve");
+            resolve({ decision: "approve" });
+          }}
           className="rounded bg-green-600 px-6 py-2 text-white text-sm font-medium hover:bg-green-700"
         >
           Approve
@@ -89,6 +93,7 @@ function PlanApprovalForm({ objectives, resolve }: PlanApprovalFormProps) {
           <button
             disabled={!feedback.trim()}
             onClick={() => {
+              onDecision?.("revise");
               resolve({ decision: "revise", feedback: feedback.trim() });
               setFeedback("");
             }}
@@ -102,7 +107,12 @@ function PlanApprovalForm({ objectives, resolve }: PlanApprovalFormProps) {
   );
 }
 
-export function useLessonPlanApproval() {
+type UseLessonPlanApprovalOptions = {
+  onDecision?: (decision: "approve" | "revise") => void;
+};
+
+export function useLessonPlanApproval(options?: UseLessonPlanApprovalOptions) {
+  const onDecision = options?.onDecision;
   return useInterrupt({
     agentId: "learning_agent",
     renderInChat: false,
@@ -117,6 +127,7 @@ export function useLessonPlanApproval() {
           key={JSON.stringify(payload.content.objectives)}
           objectives={payload.content.objectives}
           resolve={resolve}
+          onDecision={onDecision}
         />
       );
     },

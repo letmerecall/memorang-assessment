@@ -36,16 +36,22 @@ const RESET_STATE = {
 export default function HomePage() {
   const { agent } = useAgent({ agentId: "learning_agent" });
   const [awaitingUpload, setAwaitingUpload] = useState(false);
+  const [planApproved, setPlanApproved] = useState(false);
   const state = (agent.state as AgentStateShape) ?? {};
   const plan = state.lesson_plan ?? null;
   const currentIdx = state.current_idx ?? 0;
-  const approvalWidget = useLessonPlanApproval();
+  const approvalWidget = useLessonPlanApproval({
+    onDecision: (decision) => {
+      if (decision === "approve") setPlanApproved(true);
+    },
+  });
   const mcqWidget = useMcqWidget();
 
   function resetToUpload() {
     agent.threadId = crypto.randomUUID();
     agent.setState(RESET_STATE);
     setAwaitingUpload(true);
+    setPlanApproved(false);
   }
 
   const summaryWidget = useSummaryWidget(resetToUpload);
@@ -53,7 +59,7 @@ export default function HomePage() {
   const showPdfUpload =
     awaitingUpload ||
     (!plan && !approvalWidget && !mcqWidget && !summaryWidget);
-  const showSidebar = !awaitingUpload && plan !== null && approvalWidget === null;
+  const showSidebar = !awaitingUpload && plan !== null && planApproved;
 
   function statusLabel() {
     if (awaitingUpload) return "Idle";
@@ -81,7 +87,12 @@ export default function HomePage() {
         <p className="text-xs text-gray-400">{statusLabel()}</p>
 
         {showPdfUpload && (
-          <PdfUpload onSessionStart={() => setAwaitingUpload(false)} />
+          <PdfUpload
+            onSessionStart={() => {
+              setAwaitingUpload(false);
+              setPlanApproved(false);
+            }}
+          />
         )}
 
         {approvalWidget}
