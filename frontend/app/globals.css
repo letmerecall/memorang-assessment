@@ -3,6 +3,7 @@
 :root {
   --background: #ffffff;
   --foreground: #171717;
+  --copilotkit-license-banner-offset: 0px;
 }
 
 @theme inline {
@@ -26,4 +27,13 @@ body {
   clip: rect(0, 0, 0, 0);
   white-space: nowrap;
   border: 0;
+}
+
+/* Self-hosted: hide CopilotKit dev inspector and license promo banner */
+cpk-web-inspector {
+  display: none !important;
+}
+
+body > div:has(a[href="https://copilotkit.ai/pricing"]) {
+  display: none !important;
 }
