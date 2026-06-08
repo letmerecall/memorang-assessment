@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import ReactMarkdown from "react-markdown";
 import { useInterrupt } from "@copilotkit/react-core/v2";
 
@@ -31,6 +32,14 @@ function parseSummaryPayload(raw: unknown): SummaryPayload | null {
   }
   if (typeof raw === "object" && raw !== null) {
     return raw as SummaryPayload;
+  }
+  return null;
+}
+
+function summaryEventKey(value: unknown): string | null {
+  const payload = parseSummaryPayload(value);
+  if (payload?.type === "summary") {
+    return JSON.stringify(payload.content);
   }
   return null;
 }
@@ -96,17 +105,24 @@ function SummaryCard({ content, onDone }: SummaryCardProps) {
 }
 
 export function useSummaryWidget(onDone?: () => void) {
+  const [dismissedKey, setDismissedKey] = useState<string | null>(null);
+
   return useInterrupt({
     agentId: "learning_agent",
     renderInChat: false,
     enabled: (event) => parseSummaryPayload(event.value)?.type === "summary",
-    render: ({ event, resolve }) => {
+    render: ({ event }) => {
+      const key = summaryEventKey(event.value);
+      if (key !== null && dismissedKey === key) return null;
       const payload = parseSummaryPayload(event.value);
       if (!payload) return <></>;
       return (
         <SummaryCard
           content={payload.content}
-          onDone={() => { resolve({}); onDone?.(); }}
+          onDone={() => {
+            if (key !== null) setDismissedKey(key);
+            onDone?.();
+          }}
         />
       );
     },
