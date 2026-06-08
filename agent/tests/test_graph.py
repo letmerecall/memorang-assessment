@@ -172,6 +172,11 @@ def test_route_after_approve_routes_to_generate_mcq_when_no_feedback():
     assert route_after_approve(state) == "generate_mcq"
 
 
+def test_route_after_approve_routes_to_ingest_plan_when_feedback_empty():
+    state = AgentState(messages=[], revision_feedback="")
+    assert route_after_approve(state) == "ingest_plan"
+
+
 def test_graph_has_approve_node():
     from langgraph.checkpoint.memory import MemorySaver
     graph = build_graph(checkpointer=MemorySaver())

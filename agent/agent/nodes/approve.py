@@ -14,4 +14,4 @@ def approve(state: AgentState) -> dict:
 
 
 def route_after_approve(state: AgentState) -> str:
-    return "ingest_plan" if state.get("revision_feedback") else "generate_mcq"
+    return "ingest_plan" if state.get("revision_feedback") is not None else "generate_mcq"
