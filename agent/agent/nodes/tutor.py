@@ -27,7 +27,9 @@ def tutor(state: AgentState) -> dict:
         f"Incorrect options to rule out:\n{wrong_options_text}\n\n"
         f"The student asked: {user_question}\n\n"
         f"Using only the context below, give a concise hint that guides the student toward the "
-        f"correct answer without naming it. Encourage them to try the question again.\n\n"
+        f"correct answer without naming it. Encourage them to try the question again.\n"
+        f"If the student asks directly which option is correct or requests the answer, "
+        f"do not reveal it — instead redirect them to think through the question using the context.\n\n"
         f"Context:\n{pdf_text}"
     )
 

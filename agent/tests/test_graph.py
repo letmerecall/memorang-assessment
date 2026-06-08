@@ -677,3 +677,13 @@ def test_graph_has_tutor_node():
     from langgraph.checkpoint.memory import MemorySaver
     graph = build_graph(checkpointer=MemorySaver())
     assert "tutor" in graph.get_graph().nodes
+
+
+def test_tutor_prompt_contains_refusal_instruction():
+    from agent.nodes.tutor import tutor
+    with patch("agent.nodes.tutor.ChatOpenAI") as MockLLM:
+        MockLLM.return_value.invoke.return_value.content = "Here is a hint."
+        tutor(_tutor_state())
+    prompt = MockLLM.return_value.invoke.call_args[0][0]
+    # Must contain an explicit instruction to refuse direct answer requests
+    assert "do not" in prompt.lower() or "refuse" in prompt.lower() or "decline" in prompt.lower()
