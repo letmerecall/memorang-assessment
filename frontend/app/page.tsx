@@ -25,7 +25,18 @@ export default function HomePage() {
   const plan = state.lesson_plan ?? null;
   const approvalWidget = useLessonPlanApproval();
   const mcqWidget = useMcqWidget();
-  const summaryWidget = useSummaryWidget();
+  const summaryWidget = useSummaryWidget(() =>
+    agent.setState({
+      pdf_text: null,
+      lesson_plan: null,
+      current_idx: 0,
+      current_mcq: null,
+      attempts: 0,
+      results: null,
+      last_answer: null,
+      last_grade: null,
+    })
+  );
 
   const anyWidget = approvalWidget || mcqWidget || summaryWidget;
 

@@ -95,7 +95,7 @@ function SummaryCard({ content, onDone }: SummaryCardProps) {
   );
 }
 
-export function useSummaryWidget() {
+export function useSummaryWidget(onDone?: () => void) {
   return useInterrupt({
     agentId: "learning_agent",
     renderInChat: false,
@@ -106,7 +106,7 @@ export function useSummaryWidget() {
       return (
         <SummaryCard
           content={payload.content}
-          onDone={() => resolve({})}
+          onDone={() => { resolve({}); onDone?.(); }}
         />
       );
     },
