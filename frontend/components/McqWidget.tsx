@@ -2,25 +2,12 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useAgent, useCopilotKit } from "@copilotkit/react-core/v2";
+import { LEARNING_AGENT_ID } from "@/lib/agent";
+import { mcqOptionKey } from "@/lib/keys";
+import { parseInterruptValue } from "@/lib/parseInterrupt";
+import type { MCQFeedback, MCQPayload } from "@/lib/types";
 
 const INTERRUPT_EVENT_NAME = "on_interrupt";
-
-type MCQContent = {
-  question: string;
-  options: string[];
-};
-
-type MCQFeedback = {
-  correct: boolean;
-  hint?: string;
-} | null;
-
-type MCQPayload = {
-  type: string;
-  content: MCQContent;
-  feedback: MCQFeedback;
-  tutor_reply?: string | null;
-};
 
 type InterruptEvent = {
   name: string;
@@ -28,17 +15,8 @@ type InterruptEvent = {
 };
 
 function parseMcqPayload(raw: unknown): MCQPayload | null {
-  if (typeof raw === "string") {
-    try {
-      return JSON.parse(raw) as MCQPayload;
-    } catch {
-      return null;
-    }
-  }
-  if (typeof raw === "object" && raw !== null) {
-    return raw as MCQPayload;
-  }
-  return null;
+  const payload = parseInterruptValue<MCQPayload>(raw);
+  return payload?.type === "mcq" ? payload : null;
 }
 
 type McqFormProps = {
@@ -78,7 +56,7 @@ function McqForm({
 
       <ol className="space-y-2 mb-6">
         {options.map((opt, i) => (
-          <li key={i}>
+          <li key={mcqOptionKey(question, i)}>
             <label className="flex items-start gap-3 cursor-pointer rounded border border-gray-200 bg-white p-3 hover:bg-gray-50">
               <input
                 type="radio"
@@ -146,7 +124,7 @@ function McqForm({
 
 export function useMcqWidget() {
   const { copilotkit } = useCopilotKit();
-  const { agent } = useAgent({ agentId: "learning_agent" });
+  const { agent } = useAgent({ agentId: LEARNING_AGENT_ID });
   const [mcqPayload, setMcqPayload] = useState<MCQPayload | null>(null);
   const pendingEventRef = useRef<InterruptEvent | null>(null);
 
@@ -162,7 +140,7 @@ export function useMcqWidget() {
       onRunFinalized: () => {
         if (!localInterrupt) return;
         const payload = parseMcqPayload(localInterrupt.value);
-        if (payload?.type === "mcq") {
+        if (payload) {
           pendingEventRef.current = localInterrupt;
           setMcqPayload(payload);
         } else {
