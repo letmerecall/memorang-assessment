@@ -8,19 +8,15 @@ import { useLessonPlanApproval } from "@/components/LessonPlanApproval";
 import { useMcqWidget } from "@/components/McqWidget";
 import { useSummaryWidget } from "@/components/Summary";
 import { ProgressSidebar } from "@/components/ProgressSidebar";
-
-type LessonPlanData = {
-  objectives: {
-    title: string;
-    description: string;
-    difficulty: "beginner" | "intermediate" | "advanced";
-  }[];
-};
-
-type AgentStateShape = {
-  lesson_plan?: LessonPlanData;
-  current_idx?: number;
-};
+import { LEARNING_AGENT_ID } from "@/lib/agent";
+import {
+  derivePhase,
+  showPdfUpload,
+  showPlanReview,
+  showSidebar,
+  statusLabel,
+} from "@/lib/sessionPhase";
+import type { AgentStateShape } from "@/lib/types";
 
 const RESET_STATE = {
   pdf_text: null,
@@ -34,7 +30,7 @@ const RESET_STATE = {
 };
 
 export default function HomePage() {
-  const { agent } = useAgent({ agentId: "learning_agent" });
+  const { agent } = useAgent({ agentId: LEARNING_AGENT_ID });
   const [awaitingUpload, setAwaitingUpload] = useState(false);
   const [planApproved, setPlanApproved] = useState(false);
   const state = (agent.state as AgentStateShape) ?? {};
@@ -56,24 +52,18 @@ export default function HomePage() {
 
   const summaryWidget = useSummaryWidget(resetToUpload);
 
-  const showPdfUpload =
-    awaitingUpload ||
-    (!plan && !approvalWidget && !mcqWidget && !summaryWidget);
-  const showSidebar = !awaitingUpload && plan !== null && planApproved;
-
-  function statusLabel() {
-    if (awaitingUpload) return "Idle";
-    if (mcqWidget) return "Answer the question";
-    if (agent.isRunning) return "Generating…";
-    if (approvalWidget) return "Awaiting your review";
-    if (summaryWidget) return "Quiz complete";
-    if (plan) return "Done";
-    return "Idle";
-  }
+  const phase = derivePhase({
+    awaitingUpload,
+    hasPlan: plan !== null,
+    isRunning: agent.isRunning,
+    hasApprovalWidget: Boolean(approvalWidget),
+    hasMcqWidget: Boolean(mcqWidget),
+    hasSummaryWidget: Boolean(summaryWidget),
+  });
 
   return (
     <div className="flex min-h-screen bg-gray-50">
-      {showSidebar && plan && (
+      {showSidebar(phase, planApproved) && plan && (
         <ProgressSidebar
           objectives={plan.objectives}
           currentIdx={currentIdx}
@@ -84,9 +74,9 @@ export default function HomePage() {
         <p className="mb-2 text-sm text-gray-500">
           Upload a PDF to generate a lesson plan.
         </p>
-        <p className="text-xs text-gray-400">{statusLabel()}</p>
+        <p className="text-xs text-gray-400">{statusLabel(phase)}</p>
 
-        {showPdfUpload && (
+        {showPdfUpload(phase) && (
           <PdfUpload
             onSessionStart={() => {
               setAwaitingUpload(false);
@@ -97,21 +87,20 @@ export default function HomePage() {
 
         {approvalWidget}
 
-        {!awaitingUpload && mcqWidget}
+        {phase !== "upload" && mcqWidget}
 
-        {!awaitingUpload && summaryWidget}
+        {phase !== "upload" && summaryWidget}
 
-        {!awaitingUpload && !approvalWidget && !mcqWidget && !summaryWidget && !agent.isRunning && plan && (
-          <LessonPlan plan={plan} />
-        )}
-
-        {!awaitingUpload && !approvalWidget && !mcqWidget && !summaryWidget && !agent.isRunning && plan && (
-          <button
-            onClick={resetToUpload}
-            className="mt-6 text-xs text-gray-400 hover:text-gray-600 underline"
-          >
-            Upload another PDF
-          </button>
+        {showPlanReview(phase) && plan && (
+          <>
+            <LessonPlan plan={plan} />
+            <button
+              onClick={resetToUpload}
+              className="mt-6 text-xs text-gray-400 hover:text-gray-600 underline"
+            >
+              Upload another PDF
+            </button>
+          </>
         )}
       </div>
     </div>
