@@ -113,7 +113,7 @@ export function useSummaryWidget(onDone?: () => void) {
     enabled: (event) => parseSummaryPayload(event.value)?.type === "summary",
     render: ({ event }) => {
       const key = summaryEventKey(event.value);
-      if (key !== null && dismissedKey === key) return null;
+      if (key !== null && dismissedKey === key) return <></>;
       const payload = parseSummaryPayload(event.value);
       if (!payload) return <></>;
       return (
