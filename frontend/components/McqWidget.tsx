@@ -1,7 +1,9 @@
 "use client";
 
-import { useState } from "react";
-import { useInterrupt } from "@copilotkit/react-core/v2";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { useAgent, useCopilotKit } from "@copilotkit/react-core/v2";
+
+const INTERRUPT_EVENT_NAME = "on_interrupt";
 
 type MCQContent = {
   question: string;
@@ -17,6 +19,12 @@ type MCQPayload = {
   type: string;
   content: MCQContent;
   feedback: MCQFeedback;
+  tutor_reply?: string | null;
+};
+
+type InterruptEvent = {
+  name: string;
+  value: unknown;
 };
 
 function parseMcqPayload(raw: unknown): MCQPayload | null {
@@ -37,11 +45,21 @@ type McqFormProps = {
   question: string;
   options: string[];
   feedback: MCQFeedback;
+  tutorReply: string | null;
+  tutorLoading: boolean;
   onSubmit: (index: number) => void;
   onAsk: (text: string) => void;
 };
 
-function McqForm({ question, options, feedback, onSubmit, onAsk }: McqFormProps) {
+function McqForm({
+  question,
+  options,
+  feedback,
+  tutorReply,
+  tutorLoading,
+  onSubmit,
+  onAsk,
+}: McqFormProps) {
   const [selected, setSelected] = useState<number | null>(null);
   const [askText, setAskText] = useState("");
 
@@ -68,6 +86,7 @@ function McqForm({ question, options, feedback, onSubmit, onAsk }: McqFormProps)
                 value={i}
                 checked={selected === i}
                 onChange={() => setSelected(i)}
+                disabled={tutorLoading}
                 className="mt-0.5 shrink-0"
               />
               <span className="text-sm text-gray-800">{opt}</span>
@@ -77,7 +96,7 @@ function McqForm({ question, options, feedback, onSubmit, onAsk }: McqFormProps)
       </ol>
 
       <button
-        disabled={selected === null}
+        disabled={selected === null || tutorLoading}
         onClick={() => {
           if (selected !== null) onSubmit(selected);
         }}
@@ -87,6 +106,14 @@ function McqForm({ question, options, feedback, onSubmit, onAsk }: McqFormProps)
       </button>
 
       <div className="mt-6 border-t border-gray-100 pt-4">
+        {tutorReply && (
+          <div className="mb-4 rounded border border-blue-200 bg-blue-50 p-3 text-sm text-blue-900">
+            <span className="font-medium">Tutor:</span> {tutorReply}
+          </div>
+        )}
+        {tutorLoading && (
+          <p className="mb-3 text-xs text-blue-600">Getting hint…</p>
+        )}
         <p className="text-xs text-gray-500 mb-2">Need a hint or want to ask a question?</p>
         <div className="flex gap-2">
           <input
@@ -94,15 +121,16 @@ function McqForm({ question, options, feedback, onSubmit, onAsk }: McqFormProps)
             value={askText}
             onChange={(e) => setAskText(e.target.value)}
             onKeyDown={(e) => {
-              if (e.key === "Enter" && askText.trim()) {
+              if (e.key === "Enter" && askText.trim() && !tutorLoading) {
                 onAsk(askText.trim());
               }
             }}
+            disabled={tutorLoading}
             placeholder="Ask your tutor…"
-            className="flex-1 rounded border border-gray-300 px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
+            className="flex-1 rounded border border-gray-300 px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400 disabled:bg-gray-50"
           />
           <button
-            disabled={!askText.trim()}
+            disabled={!askText.trim() || tutorLoading}
             onClick={() => {
               if (askText.trim()) onAsk(askText.trim());
             }}
@@ -117,25 +145,69 @@ function McqForm({ question, options, feedback, onSubmit, onAsk }: McqFormProps)
 }
 
 export function useMcqWidget() {
-  return useInterrupt({
-    agentId: "learning_agent",
-    renderInChat: false,
-    enabled: (event) => parseMcqPayload(event.value)?.type === "mcq",
-    render: ({ event, resolve }) => {
-      const payload = parseMcqPayload(event.value);
-      if (!payload) return <></>;
-      const { question, options } = payload.content;
-      const feedback = payload.feedback;
+  const { copilotkit } = useCopilotKit();
+  const { agent } = useAgent({ agentId: "learning_agent" });
+  const [mcqPayload, setMcqPayload] = useState<MCQPayload | null>(null);
+  const pendingEventRef = useRef<InterruptEvent | null>(null);
 
-      return (
-        <McqForm
-          question={question}
-          options={options}
-          feedback={feedback}
-          onSubmit={(index) => resolve({ kind: "answer", index })}
-          onAsk={(text) => resolve({ kind: "question", text })}
-        />
-      );
+  useEffect(() => {
+    let localInterrupt: InterruptEvent | null = null;
+
+    const subscription = agent.subscribe({
+      onCustomEvent: ({ event }) => {
+        if (event.name === INTERRUPT_EVENT_NAME) {
+          localInterrupt = { name: event.name, value: event.value };
+        }
+      },
+      onRunFinalized: () => {
+        if (!localInterrupt) return;
+        const payload = parseMcqPayload(localInterrupt.value);
+        if (payload?.type === "mcq") {
+          pendingEventRef.current = localInterrupt;
+          setMcqPayload(payload);
+        } else {
+          pendingEventRef.current = null;
+          setMcqPayload(null);
+        }
+        localInterrupt = null;
+      },
+      onRunFailed: () => {
+        localInterrupt = null;
+      },
+    });
+
+    return () => subscription.unsubscribe();
+  }, [agent]);
+
+  const resolve = useCallback(
+    (response: unknown) => {
+      copilotkit.runAgent({
+        agent,
+        forwardedProps: {
+          command: {
+            resume: response,
+            interruptEvent: pendingEventRef.current?.value,
+          },
+        },
+      });
     },
-  });
+    [agent, copilotkit]
+  );
+
+  if (!mcqPayload) return null;
+
+  const { question, options } = mcqPayload.content;
+
+  return (
+    <McqForm
+      key={question}
+      question={question}
+      options={options}
+      feedback={mcqPayload.feedback}
+      tutorReply={mcqPayload.tutor_reply ?? null}
+      tutorLoading={agent.isRunning}
+      onSubmit={(index) => resolve({ kind: "answer", index })}
+      onAsk={(text) => resolve({ kind: "question", text })}
+    />
+  );
 }
