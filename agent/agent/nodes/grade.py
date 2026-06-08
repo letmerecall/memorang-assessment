@@ -1,5 +1,3 @@
-from langgraph.graph import END
-
 from agent.mcq_schema import MCQResult
 from agent.state import AgentState
 
@@ -17,6 +15,7 @@ def grade(state: AgentState) -> dict:
             objective=objective_title,
             correct_first_try=(attempts == 1),
             attempts=attempts,
+            # TODO: set asked_tutor=True here once the tutor node is wired in and resumes back to grade
         )
         existing = list(state.get("results") or [])
         existing.append(result.model_dump())
@@ -45,6 +44,9 @@ def route_mcq(state: AgentState) -> str:
 
 
 def route_after_grade(state: AgentState) -> str:
-    if (state.get("last_grade") or {}).get("correct"):
-        return END
-    return "ask_mcq"
+    if not (state.get("last_grade") or {}).get("correct"):
+        return "ask_mcq"
+    objectives = (state.get("lesson_plan") or {}).get("objectives", [])
+    if state.get("current_idx", 0) < len(objectives):
+        return "generate_mcq"
+    return "summary"

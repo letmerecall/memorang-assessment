@@ -1,12 +1,12 @@
 """Tests for AgentState and graph components."""
 from unittest.mock import patch, call
-from langgraph.graph import END
 from agent.state import AgentState
 from agent.graph import ingest_plan, build_graph, approve, _parse_resume, generate_plan, route_after_approve
 from agent.plan_schema import LessonPlan, LearningObjective
 from agent.nodes.grade import grade, route_mcq, route_after_grade
 from agent.nodes.ask_mcq import ask_mcq
 from agent.nodes.generate_mcq import generate_mcq
+from agent.nodes.summary import summary
 from agent.mcq_schema import MCQ
 
 
@@ -178,6 +178,12 @@ def test_graph_has_approve_node():
     assert "approve" in graph.get_graph().nodes
 
 
+def test_graph_has_summary_node():
+    from langgraph.checkpoint.memory import MemorySaver
+    graph = build_graph(checkpointer=MemorySaver())
+    assert "summary" in graph.get_graph().nodes
+
+
 # ── grade ──────────────────────────────────────────────────────────────
 
 def _mcq_dict():
@@ -288,12 +294,12 @@ def test_route_mcq_missing_kind_defaults_to_grade():
 
 # ── route_after_grade ──────────────────────────────────────────────────
 
-def test_route_after_grade_correct_routes_to_end():
+def test_route_after_grade_correct_no_plan_routes_to_summary():
     state = AgentState(
         messages=[],
         last_grade={"correct": True, "explanation": "...", "source_quote": "..."},
     )
-    assert route_after_grade(state) == END
+    assert route_after_grade(state) == "summary"
 
 
 def test_route_after_grade_incorrect_routes_to_ask_mcq():
@@ -302,6 +308,38 @@ def test_route_after_grade_incorrect_routes_to_ask_mcq():
         last_grade={"correct": False, "hint": "Think again."},
     )
     assert route_after_grade(state) == "ask_mcq"
+
+
+def test_route_after_grade_correct_more_objectives_routes_to_generate_mcq():
+    state = AgentState(
+        messages=[],
+        lesson_plan={
+            "objectives": [
+                {"title": "T0", "description": "D0", "difficulty": "beginner"},
+                {"title": "T1", "description": "D1", "difficulty": "beginner"},
+                {"title": "T2", "description": "D2", "difficulty": "beginner"},
+            ]
+        },
+        current_idx=1,
+        last_grade={"correct": True, "explanation": "...", "source_quote": "..."},
+    )
+    assert route_after_grade(state) == "generate_mcq"
+
+
+def test_route_after_grade_correct_all_done_routes_to_summary():
+    state = AgentState(
+        messages=[],
+        lesson_plan={
+            "objectives": [
+                {"title": "T0", "description": "D0", "difficulty": "beginner"},
+                {"title": "T1", "description": "D1", "difficulty": "beginner"},
+                {"title": "T2", "description": "D2", "difficulty": "beginner"},
+            ]
+        },
+        current_idx=3,
+        last_grade={"correct": True, "explanation": "...", "source_quote": "..."},
+    )
+    assert route_after_grade(state) == "summary"
 
 
 # ── ask_mcq ────────────────────────────────────────────────────────────
@@ -394,3 +432,107 @@ def test_generate_mcq_includes_objective_and_pdf_in_prompt():
     prompt = mock_instance.invoke.call_args[0][0]
     assert "Topic A" in prompt
     assert "the content" in prompt
+
+
+# ── summary ────────────────────────────────────────────────────────────
+
+
+def _three_results(*, weak_idx: int | None = None) -> list[dict]:
+    results = []
+    for i in range(3):
+        results.append({
+            "objective": f"Topic {i}",
+            "correct_first_try": True,
+            "attempts": 1,
+            "asked_tutor": False,
+        })
+    if weak_idx is not None:
+        results[weak_idx]["correct_first_try"] = False
+        results[weak_idx]["attempts"] = 2
+    return results
+
+
+def test_summary_computes_correct_score():
+    results = _three_results(weak_idx=2)  # 2 of 3 correct first try → 0.667
+    state = AgentState(
+        messages=[],
+        results=results,
+        pdf_text="content",
+        lesson_plan={"objectives": []},
+    )
+    with patch("agent.nodes.summary.interrupt") as mock_interrupt, \
+         patch("agent.nodes.summary.ChatOpenAI") as MockLLM:
+        mock_instance = MockLLM.return_value
+        mock_instance.invoke.return_value.content = "Study Topic 2."
+        summary(state)
+    payload = mock_interrupt.call_args[0][0]
+    assert abs(payload["content"]["score"] - 2 / 3) < 0.001
+    assert payload["type"] == "summary"
+
+
+def test_summary_tips_prompt_includes_weak_objective():
+    results = _three_results(weak_idx=1)  # Topic 1 is weak
+    state = AgentState(
+        messages=[],
+        results=results,
+        pdf_text="the content",
+        lesson_plan={"objectives": []},
+    )
+    with patch("agent.nodes.summary.interrupt"), \
+         patch("agent.nodes.summary.ChatOpenAI") as MockLLM:
+        mock_instance = MockLLM.return_value
+        mock_instance.invoke.return_value.content = "Review Topic 1."
+        summary(state)
+    prompt = mock_instance.invoke.call_args[0][0]
+    assert "Topic 1" in prompt
+    assert "Topic 0" not in prompt
+    assert "Topic 2" not in prompt
+
+
+def test_summary_skips_llm_when_all_correct_first_try():
+    results = _three_results()  # all correct first try
+    state = AgentState(
+        messages=[],
+        results=results,
+        pdf_text="content",
+        lesson_plan={"objectives": []},
+    )
+    with patch("agent.nodes.summary.interrupt") as mock_interrupt, \
+         patch("agent.nodes.summary.ChatOpenAI") as MockLLM:
+        summary(state)
+    MockLLM.assert_not_called()
+    payload = mock_interrupt.call_args[0][0]
+    assert "Great job" in payload["content"]["tips"]
+    assert payload["content"]["score"] == 1.0
+
+
+def test_summary_results_passed_through_in_payload():
+    results = _three_results(weak_idx=0)
+    state = AgentState(
+        messages=[],
+        results=results,
+        pdf_text="content",
+        lesson_plan={"objectives": []},
+    )
+    with patch("agent.nodes.summary.interrupt") as mock_interrupt, \
+         patch("agent.nodes.summary.ChatOpenAI") as MockLLM:
+        mock_instance = MockLLM.return_value
+        mock_instance.invoke.return_value.content = "Tips."
+        summary(state)
+    payload = mock_interrupt.call_args[0][0]
+    assert payload["content"]["results"] == results
+
+
+def test_summary_empty_results_returns_zero_score():
+    state = AgentState(
+        messages=[],
+        results=None,
+        pdf_text="content",
+        lesson_plan={"objectives": []},
+    )
+    with patch("agent.nodes.summary.interrupt") as mock_interrupt, \
+         patch("agent.nodes.summary.ChatOpenAI") as MockLLM:
+        summary(state)
+    MockLLM.assert_not_called()
+    payload = mock_interrupt.call_args[0][0]
+    assert payload["content"]["score"] == 0.0
