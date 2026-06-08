@@ -2,25 +2,12 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useAgent, useCopilotKit } from "@copilotkit/react-core/v2";
+import { LEARNING_AGENT_ID } from "@/lib/agent";
+import { mcqOptionKey } from "@/lib/keys";
+import { parseInterruptValue } from "@/lib/parseInterrupt";
+import type { MCQFeedback, MCQPayload } from "@/lib/types";
 
 const INTERRUPT_EVENT_NAME = "on_interrupt";
-
-type MCQContent = {
-  question: string;
-  options: string[];
-};
-
-type MCQFeedback = {
-  correct: boolean;
-  hint?: string;
-} | null;
-
-type MCQPayload = {
-  type: string;
-  content: MCQContent;
-  feedback: MCQFeedback;
-  tutor_reply?: string | null;
-};
 
 type InterruptEvent = {
   name: string;
@@ -28,17 +15,8 @@ type InterruptEvent = {
 };
 
 function parseMcqPayload(raw: unknown): MCQPayload | null {
-  if (typeof raw === "string") {
-    try {
-      return JSON.parse(raw) as MCQPayload;
-    } catch {
-      return null;
-    }
-  }
-  if (typeof raw === "object" && raw !== null) {
-    return raw as MCQPayload;
-  }
-  return null;
+  const payload = parseInterruptValue<MCQPayload>(raw);
+  return payload?.type === "mcq" ? payload : null;
 }
 
 type McqFormProps = {
@@ -63,6 +41,11 @@ function McqForm({
   const [selected, setSelected] = useState<number | null>(null);
   const [askText, setAskText] = useState("");
 
+  function handleAsk(text: string) {
+    onAsk(text);
+    setAskText("");
+  }
+
   return (
     <div className="w-full max-w-xl mt-8">
       <h2 className="text-lg font-semibold text-gray-900 mb-3">Question</h2>
@@ -76,24 +59,27 @@ function McqForm({
 
       <p className="text-sm text-gray-800 mb-4">{question}</p>
 
-      <ol className="space-y-2 mb-6">
-        {options.map((opt, i) => (
-          <li key={i}>
-            <label className="flex items-start gap-3 cursor-pointer rounded border border-gray-200 bg-white p-3 hover:bg-gray-50">
-              <input
-                type="radio"
-                name="mcq-option"
-                value={i}
-                checked={selected === i}
-                onChange={() => setSelected(i)}
-                disabled={tutorLoading}
-                className="mt-0.5 shrink-0"
-              />
-              <span className="text-sm text-gray-800">{opt}</span>
-            </label>
-          </li>
-        ))}
-      </ol>
+      <fieldset className="space-y-2 mb-6 border-0 p-0 m-0">
+        <legend className="sr-only">Answer choices</legend>
+        <ol className="space-y-2">
+          {options.map((opt, i) => (
+            <li key={mcqOptionKey(question, i)}>
+              <label className="flex items-start gap-3 cursor-pointer rounded border border-gray-200 bg-white p-3 hover:bg-gray-50">
+                <input
+                  type="radio"
+                  name="mcq-option"
+                  value={i}
+                  checked={selected === i}
+                  onChange={() => setSelected(i)}
+                  disabled={tutorLoading}
+                  className="mt-0.5 shrink-0"
+                />
+                <span className="text-sm text-gray-800">{opt}</span>
+              </label>
+            </li>
+          ))}
+        </ol>
+      </fieldset>
 
       <button
         disabled={selected === null || tutorLoading}
@@ -122,7 +108,7 @@ function McqForm({
             onChange={(e) => setAskText(e.target.value)}
             onKeyDown={(e) => {
               if (e.key === "Enter" && askText.trim() && !tutorLoading) {
-                onAsk(askText.trim());
+                handleAsk(askText.trim());
               }
             }}
             disabled={tutorLoading}
@@ -132,7 +118,7 @@ function McqForm({
           <button
             disabled={!askText.trim() || tutorLoading}
             onClick={() => {
-              if (askText.trim()) onAsk(askText.trim());
+              if (askText.trim()) handleAsk(askText.trim());
             }}
             className="rounded border border-blue-300 bg-blue-50 px-4 py-1.5 text-sm text-blue-700 hover:bg-blue-100 disabled:opacity-50"
           >
@@ -146,7 +132,7 @@ function McqForm({
 
 export function useMcqWidget() {
   const { copilotkit } = useCopilotKit();
-  const { agent } = useAgent({ agentId: "learning_agent" });
+  const { agent } = useAgent({ agentId: LEARNING_AGENT_ID });
   const [mcqPayload, setMcqPayload] = useState<MCQPayload | null>(null);
   const pendingEventRef = useRef<InterruptEvent | null>(null);
 
@@ -162,7 +148,7 @@ export function useMcqWidget() {
       onRunFinalized: () => {
         if (!localInterrupt) return;
         const payload = parseMcqPayload(localInterrupt.value);
-        if (payload?.type === "mcq") {
+        if (payload) {
           pendingEventRef.current = localInterrupt;
           setMcqPayload(payload);
         } else {

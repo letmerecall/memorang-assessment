@@ -3,42 +3,19 @@
 import { useState } from "react";
 import ReactMarkdown from "react-markdown";
 import { useInterrupt } from "@copilotkit/react-core/v2";
-
-type SummaryResult = {
-  objective: string;
-  correct_first_try: boolean;
-  attempts: number;
-  asked_tutor: boolean;
-};
-
-type SummaryContent = {
-  score: number;
-  results: SummaryResult[];
-  tips: string;
-};
-
-type SummaryPayload = {
-  type: "summary";
-  content: SummaryContent;
-};
+import { LEARNING_AGENT_ID } from "@/lib/agent";
+import { markdownComponents } from "@/lib/markdownComponents";
+import { parseInterruptValue } from "@/lib/parseInterrupt";
+import type { SummaryContent, SummaryPayload } from "@/lib/types";
 
 function parseSummaryPayload(raw: unknown): SummaryPayload | null {
-  if (typeof raw === "string") {
-    try {
-      return JSON.parse(raw) as SummaryPayload;
-    } catch {
-      return null;
-    }
-  }
-  if (typeof raw === "object" && raw !== null) {
-    return raw as SummaryPayload;
-  }
-  return null;
+  const payload = parseInterruptValue<SummaryPayload>(raw);
+  return payload?.type === "summary" ? payload : null;
 }
 
 function summaryEventKey(value: unknown): string | null {
   const payload = parseSummaryPayload(value);
-  if (payload?.type === "summary") {
+  if (payload) {
     return JSON.stringify(payload.content);
   }
   return null;
@@ -76,21 +53,7 @@ function SummaryCard({ content, onDone }: SummaryCardProps) {
       {content.tips && (
         <div className="border-t border-blue-200 pt-4 mb-4">
           <h3 className="text-sm font-semibold text-blue-800 mb-2">Study Tips</h3>
-          <ReactMarkdown
-            components={{
-              p: ({ children }) => <p className="text-sm text-gray-700 mb-2 last:mb-0">{children}</p>,
-              strong: ({ children }) => <strong className="font-semibold text-gray-800">{children}</strong>,
-              em: ({ children }) => <em className="italic">{children}</em>,
-              ul: ({ children }) => <ul className="list-disc list-inside text-sm text-gray-700 mb-2 space-y-1">{children}</ul>,
-              ol: ({ children }) => <ol className="list-decimal list-inside text-sm text-gray-700 mb-2 space-y-1">{children}</ol>,
-              li: ({ children }) => <li className="text-sm text-gray-700">{children}</li>,
-              h1: ({ children }) => <h4 className="text-sm font-semibold text-gray-800 mb-1">{children}</h4>,
-              h2: ({ children }) => <h4 className="text-sm font-semibold text-gray-800 mb-1">{children}</h4>,
-              h3: ({ children }) => <h4 className="text-sm font-semibold text-gray-800 mb-1">{children}</h4>,
-            }}
-          >
-            {content.tips}
-          </ReactMarkdown>
+          <ReactMarkdown components={markdownComponents}>{content.tips}</ReactMarkdown>
         </div>
       )}
 
@@ -108,12 +71,12 @@ export function useSummaryWidget(onDone?: () => void) {
   const [dismissedKey, setDismissedKey] = useState<string | null>(null);
 
   return useInterrupt({
-    agentId: "learning_agent",
+    agentId: LEARNING_AGENT_ID,
     renderInChat: false,
-    enabled: (event) => parseSummaryPayload(event.value)?.type === "summary",
+    enabled: (event) => parseSummaryPayload(event.value) !== null,
     render: ({ event }) => {
       const key = summaryEventKey(event.value);
-      if (key !== null && dismissedKey === key) return null;
+      if (key !== null && dismissedKey === key) return <></>;
       const payload = parseSummaryPayload(event.value);
       if (!payload) return <></>;
       return (

@@ -2,39 +2,10 @@
 
 import { useState } from "react";
 import { useInterrupt } from "@copilotkit/react-core/v2";
-
-type Difficulty = "beginner" | "intermediate" | "advanced";
-
-type Objective = {
-  title: string;
-  description: string;
-  difficulty: Difficulty;
-};
-
-type PlanApprovalPayload = {
-  type: string;
-  content: { objectives: Objective[] };
-};
-
-const BADGE_STYLE: Record<Difficulty, string> = {
-  beginner: "bg-green-100 text-green-800",
-  intermediate: "bg-yellow-100 text-yellow-800",
-  advanced: "bg-red-100 text-red-800",
-};
-
-function parseInterruptValue(raw: unknown): PlanApprovalPayload | null {
-  if (typeof raw === "string") {
-    try {
-      return JSON.parse(raw) as PlanApprovalPayload;
-    } catch {
-      return null;
-    }
-  }
-  if (typeof raw === "object" && raw !== null) {
-    return raw as PlanApprovalPayload;
-  }
-  return null;
-}
+import { LEARNING_AGENT_ID } from "@/lib/agent";
+import { parseInterruptValue } from "@/lib/parseInterrupt";
+import type { Objective, PlanApprovalPayload } from "@/lib/types";
+import { ObjectiveList } from "@/components/ObjectiveList";
 
 type PlanApprovalFormProps = {
   objectives: Objective[];
@@ -52,24 +23,7 @@ function PlanApprovalForm({ objectives, resolve, onDecision }: PlanApprovalFormP
         Approve to continue, or describe what you&apos;d like changed.
       </p>
 
-      <ol className="space-y-4 mb-6">
-        {objectives.map((obj, i) => (
-          <li
-            key={i}
-            className="rounded border border-gray-200 bg-white p-4 shadow-sm"
-          >
-            <div className="flex items-center justify-between mb-1">
-              <span className="font-medium text-sm">{obj.title}</span>
-              <span
-                className={`text-xs px-2 py-0.5 rounded-full font-medium ${BADGE_STYLE[obj.difficulty]}`}
-              >
-                {obj.difficulty}
-              </span>
-            </div>
-            <p className="text-sm text-gray-600">{obj.description}</p>
-          </li>
-        ))}
-      </ol>
+      <ObjectiveList objectives={objectives} className="space-y-4 mb-6" />
 
       <div className="flex flex-col gap-3">
         <button
@@ -114,12 +68,12 @@ type UseLessonPlanApprovalOptions = {
 export function useLessonPlanApproval(options?: UseLessonPlanApprovalOptions) {
   const onDecision = options?.onDecision;
   return useInterrupt({
-    agentId: "learning_agent",
+    agentId: LEARNING_AGENT_ID,
     renderInChat: false,
     enabled: (event) =>
-      parseInterruptValue(event.value)?.type === "plan_approval",
+      parseInterruptValue<PlanApprovalPayload>(event.value)?.type === "plan_approval",
     render: ({ event, resolve }) => {
-      const payload = parseInterruptValue(event.value);
+      const payload = parseInterruptValue<PlanApprovalPayload>(event.value);
       if (!payload) return <></>;
 
       return (

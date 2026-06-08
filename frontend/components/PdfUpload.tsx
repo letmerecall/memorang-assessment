@@ -2,13 +2,14 @@
 
 import { useRef, useState } from "react";
 import { useAgent } from "@copilotkit/react-core/v2";
+import { LEARNING_AGENT_ID } from "@/lib/agent";
 
 type PdfUploadProps = {
   onSessionStart?: () => void;
 };
 
 export function PdfUpload({ onSessionStart }: PdfUploadProps) {
-  const { agent } = useAgent({ agentId: "learning_agent" });
+  const { agent } = useAgent({ agentId: LEARNING_AGENT_ID });
   const inputRef = useRef<HTMLInputElement>(null);
   const [error, setError] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
