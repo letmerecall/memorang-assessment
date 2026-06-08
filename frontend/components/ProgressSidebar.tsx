@@ -26,6 +26,12 @@ const STATUS_ICON: Record<ObjectiveStatus, string> = {
   pending: "○",
 };
 
+const STATUS_LABEL: Record<ObjectiveStatus, string> = {
+  done: "Completed",
+  current: "In progress",
+  pending: "Pending",
+};
+
 const ROW_STYLE: Record<ObjectiveStatus, string> = {
   done: "bg-green-50",
   current: "bg-blue-50 border border-blue-200",
@@ -54,10 +60,12 @@ export function ProgressSidebar({ objectives, currentIdx }: ProgressSidebarProps
             className={`flex items-start gap-2.5 rounded-md px-2 py-2 ${ROW_STYLE[status]}`}
           >
             <span
+              aria-hidden="true"
               className={`mt-0.5 text-sm shrink-0 ${status === "pending" ? "text-gray-300" : ""}`}
             >
               {STATUS_ICON[status]}
             </span>
+            <span className="sr-only">{STATUS_LABEL[status]}</span>
             <div>
               <p className={`text-xs leading-snug ${TITLE_STYLE[status]}`}>{obj.title}</p>
               <p

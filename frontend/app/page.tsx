@@ -74,7 +74,9 @@ export default function HomePage() {
         <p className="mb-2 text-sm text-gray-500">
           Upload a PDF to generate a lesson plan.
         </p>
-        <p className="text-xs text-gray-400">{statusLabel(phase)}</p>
+        <p className="text-xs text-gray-400" aria-live="polite" aria-atomic="true">
+          {statusLabel(phase)}
+        </p>
 
         {showPdfUpload(phase) && (
           <PdfUpload
