@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import { useAgent } from "@copilotkit/react-core/v2";
 import { PdfUpload } from "@/components/PdfUpload";
 import { LessonPlan } from "@/components/LessonPlan";
@@ -21,30 +22,41 @@ type AgentStateShape = {
   current_idx?: number;
 };
 
+const RESET_STATE = {
+  pdf_text: null,
+  lesson_plan: null,
+  current_idx: 0,
+  current_mcq: null,
+  attempts: 0,
+  results: null,
+  last_answer: null,
+  last_grade: null,
+};
+
 export default function HomePage() {
   const { agent } = useAgent({ agentId: "learning_agent" });
+  const [awaitingUpload, setAwaitingUpload] = useState(false);
   const state = (agent.state as AgentStateShape) ?? {};
   const plan = state.lesson_plan ?? null;
   const currentIdx = state.current_idx ?? 0;
   const approvalWidget = useLessonPlanApproval();
   const mcqWidget = useMcqWidget();
-  const summaryWidget = useSummaryWidget(() =>
-    agent.setState({
-      pdf_text: null,
-      lesson_plan: null,
-      current_idx: 0,
-      current_mcq: null,
-      attempts: 0,
-      results: null,
-      last_answer: null,
-      last_grade: null,
-    })
-  );
 
-  const anyWidget = approvalWidget || mcqWidget || summaryWidget;
-  const showSidebar = plan !== null && approvalWidget === null;
+  function resetToUpload() {
+    agent.threadId = crypto.randomUUID();
+    agent.setState(RESET_STATE);
+    setAwaitingUpload(true);
+  }
+
+  const summaryWidget = useSummaryWidget(resetToUpload);
+
+  const showPdfUpload =
+    awaitingUpload ||
+    (!plan && !approvalWidget && !mcqWidget && !summaryWidget);
+  const showSidebar = !awaitingUpload && plan !== null && approvalWidget === null;
 
   function statusLabel() {
+    if (awaitingUpload) return "Idle";
     if (mcqWidget) return "Answer the question";
     if (agent.isRunning) return "Generating…";
     if (approvalWidget) return "Awaiting your review";
@@ -52,48 +64,6 @@ export default function HomePage() {
     if (plan) return "Done";
     return "Idle";
   }
-
-  const mainContent = (
-    <>
-      <h1 className="mb-2 text-2xl font-semibold text-gray-900">AI Learning Agent</h1>
-      <p className="mb-2 text-sm text-gray-500">
-        Upload a PDF to generate a lesson plan.
-      </p>
-      <p className="text-xs text-gray-400">{statusLabel()}</p>
-
-      {!plan && !anyWidget && <PdfUpload />}
-
-      {approvalWidget}
-
-      {mcqWidget}
-
-      {summaryWidget}
-
-      {!anyWidget && !agent.isRunning && plan && (
-        <LessonPlan plan={plan} />
-      )}
-
-      {!anyWidget && !agent.isRunning && plan && (
-        <button
-          onClick={() =>
-            agent.setState({
-              pdf_text: null,
-              lesson_plan: null,
-              current_idx: 0,
-              current_mcq: null,
-              attempts: 0,
-              results: null,
-              last_answer: null,
-              last_grade: null,
-            })
-          }
-          className="mt-6 text-xs text-gray-400 hover:text-gray-600 underline"
-        >
-          Upload another PDF
-        </button>
-      )}
-    </>
-  );
 
   return (
     <div className="flex min-h-screen bg-gray-50">
@@ -104,7 +74,34 @@ export default function HomePage() {
         />
       )}
       <div className="flex flex-1 flex-col items-center py-16 px-4">
-        {mainContent}
+        <h1 className="mb-2 text-2xl font-semibold text-gray-900">AI Learning Agent</h1>
+        <p className="mb-2 text-sm text-gray-500">
+          Upload a PDF to generate a lesson plan.
+        </p>
+        <p className="text-xs text-gray-400">{statusLabel()}</p>
+
+        {showPdfUpload && (
+          <PdfUpload onSessionStart={() => setAwaitingUpload(false)} />
+        )}
+
+        {approvalWidget}
+
+        {!awaitingUpload && mcqWidget}
+
+        {!awaitingUpload && summaryWidget}
+
+        {!awaitingUpload && !approvalWidget && !mcqWidget && !summaryWidget && !agent.isRunning && plan && (
+          <LessonPlan plan={plan} />
+        )}
+
+        {!awaitingUpload && !approvalWidget && !mcqWidget && !summaryWidget && !agent.isRunning && plan && (
+          <button
+            onClick={resetToUpload}
+            className="mt-6 text-xs text-gray-400 hover:text-gray-600 underline"
+          >
+            Upload another PDF
+          </button>
+        )}
       </div>
     </div>
   );
