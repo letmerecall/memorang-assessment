@@ -9,6 +9,7 @@ from agent.nodes.generate_mcq import generate_mcq
 from agent.nodes.ask_mcq import ask_mcq
 from agent.nodes.grade import grade, route_mcq, route_after_grade
 from agent.nodes.summary import summary
+from agent.nodes.tutor import tutor
 from agent.utils import _parse_resume  # noqa: F401 — backward-compat re-export for tests
 
 
@@ -19,6 +20,7 @@ def build_graph(checkpointer: Any = None):
     builder.add_node("generate_mcq", generate_mcq)
     builder.add_node("ask_mcq", ask_mcq)
     builder.add_node("grade", grade)
+    builder.add_node("tutor", tutor)
     builder.add_node("summary", summary)
     builder.set_entry_point("ingest_plan")
     builder.add_edge("ingest_plan", "approve")
@@ -31,8 +33,9 @@ def build_graph(checkpointer: Any = None):
     builder.add_conditional_edges(
         "ask_mcq",
         route_mcq,
-        {"grade": "grade", "tutor": END},  # "tutor" stub — node not yet implemented
+        {"grade": "grade", "tutor": "tutor"},
     )
+    builder.add_edge("tutor", "ask_mcq")
     builder.add_conditional_edges(
         "grade",
         route_after_grade,
