@@ -46,4 +46,5 @@ def generate_mcq(state: AgentState) -> dict:
         "attempts": 0,
         "last_grade": None,
         "asked_tutor": False,
+        "last_tutor_reply": None,
     }

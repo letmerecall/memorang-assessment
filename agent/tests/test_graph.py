@@ -350,7 +350,9 @@ def test_ask_mcq_calls_interrupt_with_mcq_payload():
     with patch("agent.nodes.ask_mcq.interrupt") as mock_interrupt:
         mock_interrupt.return_value = {"kind": "answer", "index": 1}
         result = ask_mcq(state)
-    mock_interrupt.assert_called_once_with({"type": "mcq", "content": mcq, "feedback": None})
+    mock_interrupt.assert_called_once_with(
+        {"type": "mcq", "content": mcq, "feedback": None, "tutor_reply": None}
+    )
     assert result["last_answer"] == {"kind": "answer", "index": 1}
 
 
@@ -361,7 +363,9 @@ def test_ask_mcq_passes_last_grade_as_feedback_on_retry():
     with patch("agent.nodes.ask_mcq.interrupt") as mock_interrupt:
         mock_interrupt.return_value = {"kind": "answer", "index": 2}
         result = ask_mcq(state)
-    mock_interrupt.assert_called_once_with({"type": "mcq", "content": mcq, "feedback": last_grade})
+    mock_interrupt.assert_called_once_with(
+        {"type": "mcq", "content": mcq, "feedback": last_grade, "tutor_reply": None}
+    )
     assert result["last_answer"]["index"] == 2
 
 
@@ -373,6 +377,27 @@ def test_ask_mcq_parses_json_string_resume():
         mock_interrupt.return_value = json.dumps({"kind": "answer", "index": 3})
         result = ask_mcq(state)
     assert result["last_answer"] == {"kind": "answer", "index": 3}
+
+
+def test_ask_mcq_includes_tutor_reply_in_interrupt():
+    mcq = _mcq_dict()
+    state = AgentState(
+        messages=[],
+        current_mcq=mcq,
+        last_grade=None,
+        last_tutor_reply="Try focusing on the source quote.",
+    )
+    with patch("agent.nodes.ask_mcq.interrupt") as mock_interrupt:
+        mock_interrupt.return_value = {"kind": "answer", "index": 0}
+        ask_mcq(state)
+    mock_interrupt.assert_called_once_with(
+        {
+            "type": "mcq",
+            "content": mcq,
+            "feedback": None,
+            "tutor_reply": "Try focusing on the source quote.",
+        }
+    )
 
 
 # ── generate_mcq ───────────────────────────────────────────────────────
@@ -604,6 +629,7 @@ def test_tutor_sets_asked_tutor_true():
         MockLLM.return_value.invoke.return_value.content = "Here is a hint."
         result = tutor(_tutor_state())
     assert result.get("asked_tutor") is True
+    assert result.get("last_tutor_reply") == "Here is a hint."
 
 
 def test_tutor_adds_ai_message_to_messages():
@@ -663,12 +689,14 @@ def test_generate_mcq_resets_asked_tutor():
         attempts=0,
         last_grade=None,
         asked_tutor=True,
+        last_tutor_reply="Old hint.",
     )
     with patch("agent.nodes.generate_mcq.ChatOpenAI") as MockLLM:
         mock_instance = MockLLM.return_value.with_structured_output.return_value
         mock_instance.invoke.return_value = _mock_mcq_model()
         result = generate_mcq(state)
     assert result["asked_tutor"] is False
+    assert result["last_tutor_reply"] is None
 
 
 # ── graph wiring ──────────────────────────────────────────────────────────

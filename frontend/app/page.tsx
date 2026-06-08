@@ -45,9 +45,9 @@ export default function HomePage() {
   const showSidebar = plan !== null && approvalWidget === null;
 
   function statusLabel() {
+    if (mcqWidget) return "Answer the question";
     if (agent.isRunning) return "Generating…";
     if (approvalWidget) return "Awaiting your review";
-    if (mcqWidget) return "Answer the question";
     if (summaryWidget) return "Quiz complete";
     if (plan) return "Done";
     return "Idle";

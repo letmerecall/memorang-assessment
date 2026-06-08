@@ -37,4 +37,5 @@ def tutor(state: AgentState) -> dict:
     return {
         "messages": [AIMessage(content=response)],
         "asked_tutor": True,
+        "last_tutor_reply": response,
     }
