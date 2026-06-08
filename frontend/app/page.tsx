@@ -6,6 +6,7 @@ import { LessonPlan } from "@/components/LessonPlan";
 import { useLessonPlanApproval } from "@/components/LessonPlanApproval";
 import { useMcqWidget } from "@/components/McqWidget";
 import { useSummaryWidget } from "@/components/Summary";
+import { ProgressSidebar } from "@/components/ProgressSidebar";
 
 type LessonPlanData = {
   objectives: {
@@ -17,12 +18,14 @@ type LessonPlanData = {
 
 type AgentStateShape = {
   lesson_plan?: LessonPlanData;
+  current_idx?: number;
 };
 
 export default function HomePage() {
   const { agent } = useAgent({ agentId: "learning_agent" });
   const state = (agent.state as AgentStateShape) ?? {};
   const plan = state.lesson_plan ?? null;
+  const currentIdx = state.current_idx ?? 0;
   const approvalWidget = useLessonPlanApproval();
   const mcqWidget = useMcqWidget();
   const summaryWidget = useSummaryWidget(() =>
@@ -39,6 +42,7 @@ export default function HomePage() {
   );
 
   const anyWidget = approvalWidget || mcqWidget || summaryWidget;
+  const showSidebar = plan !== null && approvalWidget === null;
 
   function statusLabel() {
     if (agent.isRunning) return "Generating…";
@@ -49,8 +53,8 @@ export default function HomePage() {
     return "Idle";
   }
 
-  return (
-    <div className="flex min-h-screen flex-col items-center bg-gray-50 py-16 px-4">
+  const mainContent = (
+    <>
       <h1 className="mb-2 text-2xl font-semibold text-gray-900">AI Learning Agent</h1>
       <p className="mb-2 text-sm text-gray-500">
         Upload a PDF to generate a lesson plan.
@@ -88,6 +92,20 @@ export default function HomePage() {
           Upload another PDF
         </button>
       )}
+    </>
+  );
+
+  return (
+    <div className="flex min-h-screen bg-gray-50">
+      {showSidebar && (
+        <ProgressSidebar
+          objectives={plan!.objectives}
+          currentIdx={currentIdx}
+        />
+      )}
+      <div className="flex flex-1 flex-col items-center py-16 px-4">
+        {mainContent}
+      </div>
     </div>
   );
 }
