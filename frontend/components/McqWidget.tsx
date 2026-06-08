@@ -38,10 +38,12 @@ type McqFormProps = {
   options: string[];
   feedback: MCQFeedback;
   onSubmit: (index: number) => void;
+  onAsk: (text: string) => void;
 };
 
-function McqForm({ question, options, feedback, onSubmit }: McqFormProps) {
+function McqForm({ question, options, feedback, onSubmit, onAsk }: McqFormProps) {
   const [selected, setSelected] = useState<number | null>(null);
+  const [askText, setAskText] = useState("");
 
   return (
     <div className="w-full max-w-xl mt-8">
@@ -83,6 +85,33 @@ function McqForm({ question, options, feedback, onSubmit }: McqFormProps) {
       >
         Submit
       </button>
+
+      <div className="mt-6 border-t border-gray-100 pt-4">
+        <p className="text-xs text-gray-500 mb-2">Need a hint or want to ask a question?</p>
+        <div className="flex gap-2">
+          <input
+            type="text"
+            value={askText}
+            onChange={(e) => setAskText(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && askText.trim()) {
+                onAsk(askText.trim());
+              }
+            }}
+            placeholder="Ask your tutor…"
+            className="flex-1 rounded border border-gray-300 px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
+          />
+          <button
+            disabled={!askText.trim()}
+            onClick={() => {
+              if (askText.trim()) onAsk(askText.trim());
+            }}
+            className="rounded border border-blue-300 bg-blue-50 px-4 py-1.5 text-sm text-blue-700 hover:bg-blue-100 disabled:opacity-50"
+          >
+            Ask
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
@@ -104,6 +133,7 @@ export function useMcqWidget() {
           options={options}
           feedback={feedback}
           onSubmit={(index) => resolve({ kind: "answer", index })}
+          onAsk={(text) => resolve({ kind: "question", text })}
         />
       );
     },
