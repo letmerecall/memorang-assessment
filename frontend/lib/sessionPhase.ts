@@ -114,3 +114,21 @@ export function showPlanReview(phase: SessionPhase): boolean {
 export function isInErrorState(state: AgentStateShape): boolean {
   return state.phase === "error";
 }
+
+export type PrePlanPhaseInput = {
+  hasPlan: boolean;
+  hasApprovalWidget: boolean;
+  hasMcqWidget: boolean;
+  hasSummaryWidget: boolean;
+  showResume: boolean;
+};
+
+export function isPrePlanPhase(input: PrePlanPhaseInput): boolean {
+  return (
+    !input.hasPlan &&
+    !input.hasApprovalWidget &&
+    !input.hasMcqWidget &&
+    !input.hasSummaryWidget &&
+    !input.showResume
+  );
+}

@@ -64,7 +64,7 @@ describe("HomePage global error handling", () => {
     vi.clearAllMocks();
   });
 
-  it("shows ErrorCard when onRunErrorEvent fires", async () => {
+  it("shows ErrorCard when onRunErrorEvent fires post-plan", async () => {
     render(<HomePage />);
 
     act(() => {
@@ -93,14 +93,56 @@ describe("HomePage global error handling", () => {
     expect(mockRunAgent).toHaveBeenCalled();
   });
 
-  it("clears error after onRunFinishedEvent", async () => {
-    mockAgent.state = { lesson_plan: { objectives: [] }, phase: "error" };
+  it("keeps error visible when error and finish fire back-to-back on failed run", async () => {
     render(<HomePage />);
 
     act(() => {
       capturedCallbacks.onRunErrorEvent?.();
     });
     expect(screen.getByText(/something went wrong/i)).toBeInTheDocument();
+
+    act(() => {
+      capturedCallbacks.onRunFinishedEvent?.();
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText(/something went wrong/i)).toBeInTheDocument();
+    });
+  });
+
+  it("clears stale error when finish fires without prior error", async () => {
+    mockAgent.state = {
+      lesson_plan: { objectives: [] },
+      phase: "error",
+      error_message: "Stale error",
+    };
+    const { rerender } = render(<HomePage />);
+    expect(screen.getByText(/stale error/i)).toBeInTheDocument();
+
+    act(() => {
+      capturedCallbacks.onRunFinishedEvent?.();
+    });
+
+    expect(mockSetState).toHaveBeenCalledWith({
+      phase: null,
+      error_message: null,
+    });
+    rerender(<HomePage />);
+
+    await waitFor(() => {
+      expect(screen.queryByText(/stale error/i)).not.toBeInTheDocument();
+    });
+  });
+
+  it("retry then finish clears error", async () => {
+    render(<HomePage />);
+
+    act(() => {
+      capturedCallbacks.onRunErrorEvent?.();
+    });
+    expect(screen.getByText(/something went wrong/i)).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: /retry/i }));
 
     act(() => {
       capturedCallbacks.onRunFinishedEvent?.();

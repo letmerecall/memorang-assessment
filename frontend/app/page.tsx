@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useAgent } from "@copilotkit/react-core/v2";
 import { PdfUpload } from "@/components/PdfUpload";
 import { LessonPlan } from "@/components/LessonPlan";
@@ -16,6 +16,7 @@ import {
   derivePlanApproved,
   heroSubtitle,
   isInErrorState,
+  isPrePlanPhase,
   shouldShowResumeScreen,
   showPdfUpload,
   showPlanReview,
@@ -28,6 +29,7 @@ import { useSessionManager } from "@/lib/useSessionManager";
 const RESUME_ERROR =
   "Could not resume — the session may have expired. Start a new lesson.";
 const RUN_ERROR = "Something went wrong. Please try again.";
+const PLAN_GEN_ERROR = "Could not generate a lesson plan. Please try again.";
 
 export default function HomePage() {
   const { agent } = useAgent({ agentId: LEARNING_AGENT_ID });
@@ -35,15 +37,22 @@ export default function HomePage() {
   const [awaitingUpload, setAwaitingUpload] = useState(false);
   const [localApproved, setLocalApproved] = useState(false);
   const [runError, setRunError] = useState<string | null>(null);
+  const [uploadRunError, setUploadRunError] = useState<string | null>(null);
   const [resuming, setResuming] = useState(false);
   const [retrying, setRetrying] = useState(false);
+  const resumingRef = useRef(false);
+  const runFailedRef = useRef(false);
+  const prePlanInputRef = useRef({
+    hasPlan: false,
+    hasApprovalWidget: false,
+    hasMcqWidget: false,
+    hasSummaryWidget: false,
+    showResume: false,
+  });
 
   const state = (agent.state as AgentStateShape) ?? {};
   const plan = state.lesson_plan ?? null;
   const currentIdx = state.current_idx ?? 0;
-  const hasError = Boolean(runError) || isInErrorState(state);
-  const errorMessage =
-    runError ?? state.error_message ?? RUN_ERROR;
 
   // Restore thread ID from localStorage onto the agent so LangGraph resumes the right checkpoint.
   useEffect(() => {
@@ -67,42 +76,64 @@ export default function HomePage() {
     setAwaitingUpload(true);
     setLocalApproved(false);
     setRunError(null);
+    setUploadRunError(null);
     setResuming(false);
     setRetrying(false);
+    resumingRef.current = false;
+    runFailedRef.current = false;
   }
 
   const summaryWidget = useSummaryWidget(resetSession);
+
+  useEffect(() => {
+    resumingRef.current = resuming;
+  }, [resuming]);
 
   // Global run lifecycle — onRunErrorEvent is the reliable hook for server-side failures.
   useEffect(() => {
     const sub = agent.subscribe({
       onRunErrorEvent: () => {
-        const msg = resuming ? RESUME_ERROR : RUN_ERROR;
-        agent.setState({ phase: "error", error_message: msg });
-        setRunError(msg);
+        runFailedRef.current = true;
+        const msg = resumingRef.current ? RESUME_ERROR : RUN_ERROR;
+        const prePlan = isPrePlanPhase(prePlanInputRef.current);
+        if (prePlan) {
+          setUploadRunError(PLAN_GEN_ERROR);
+        } else {
+          agent.setState({ phase: "error", error_message: msg });
+          setRunError(msg);
+        }
         setResuming(false);
         setRetrying(false);
+        resumingRef.current = false;
       },
       onRunFinishedEvent: () => {
         setResuming(false);
         setRetrying(false);
-        setRunError(null);
-        agent.setState({ phase: null, error_message: null });
+        if (!runFailedRef.current) {
+          setRunError(null);
+          setUploadRunError(null);
+          agent.setState({ phase: null, error_message: null });
+        }
+        runFailedRef.current = false;
       },
     });
     return () => sub.unsubscribe();
-  }, [agent, resuming]);
+  }, [agent]);
 
   function handleResume() {
+    runFailedRef.current = false;
     setRunError(null);
+    resumingRef.current = true;
     setResuming(true);
     agent.runAgent().catch(() => {
       setRunError(RESUME_ERROR);
       setResuming(false);
+      resumingRef.current = false;
     });
   }
 
   function handleRetry() {
+    runFailedRef.current = false;
     setRetrying(true);
     setRunError(null);
     agent.setState({ phase: null, error_message: null });
@@ -112,15 +143,14 @@ export default function HomePage() {
     });
   }
 
-  const phase = derivePhase({
-    awaitingUpload,
-    hasPlan: plan !== null,
-    isRunning: agent.isRunning,
-    hasApprovalWidget: Boolean(approvalWidget),
-    hasMcqWidget: Boolean(mcqWidget),
-    hasSummaryWidget: Boolean(summaryWidget),
-    hasError,
-  });
+  function handleUploadRetry() {
+    runFailedRef.current = false;
+    setUploadRunError(null);
+    agent.setState({ phase: null, error_message: null });
+    agent.runAgent().catch(() => {
+      setUploadRunError(PLAN_GEN_ERROR);
+    });
+  }
 
   const planApproved =
     derivePlanApproved(state, Boolean(approvalWidget)) || localApproved;
@@ -133,6 +163,28 @@ export default function HomePage() {
     hasSummaryWidget: Boolean(summaryWidget),
     isRunning: agent.isRunning,
     awaitingUpload,
+  });
+
+  prePlanInputRef.current = {
+    hasPlan: plan !== null,
+    hasApprovalWidget: Boolean(approvalWidget),
+    hasMcqWidget: Boolean(mcqWidget),
+    hasSummaryWidget: Boolean(summaryWidget),
+    showResume: showResumeScreen,
+  };
+
+  const hasGlobalError = Boolean(runError) || isInErrorState(state);
+  const errorMessage =
+    runError ?? state.error_message ?? RUN_ERROR;
+
+  const phase = derivePhase({
+    awaitingUpload,
+    hasPlan: plan !== null,
+    isRunning: agent.isRunning,
+    hasApprovalWidget: Boolean(approvalWidget),
+    hasMcqWidget: Boolean(mcqWidget),
+    hasSummaryWidget: Boolean(summaryWidget),
+    hasError: hasGlobalError,
   });
 
   return (
@@ -177,7 +229,7 @@ export default function HomePage() {
           </div>
         )}
 
-        {loaded && !showResumeScreen && hasError && (
+        {loaded && !showResumeScreen && hasGlobalError && (
           <ErrorCard
             message={errorMessage}
             onRetry={handleRetry}
@@ -186,8 +238,14 @@ export default function HomePage() {
           />
         )}
 
-        {loaded && !showResumeScreen && !hasError && showPdfUpload(phase) && (
+        {loaded &&
+          !showResumeScreen &&
+          !hasGlobalError &&
+          (showPdfUpload(phase) || uploadRunError) && (
           <PdfUpload
+            agentRunError={uploadRunError}
+            onAgentRetry={handleUploadRetry}
+            onClearAgentRunError={() => setUploadRunError(null)}
             onSessionStart={(threadId) => {
               saveThreadId(threadId);
               setAwaitingUpload(false);
@@ -196,13 +254,13 @@ export default function HomePage() {
           />
         )}
 
-        {!hasError && approvalWidget}
+        {!hasGlobalError && approvalWidget}
 
-        {!hasError && phase !== "upload" && mcqWidget}
+        {!hasGlobalError && phase !== "upload" && mcqWidget}
 
-        {!hasError && phase !== "upload" && summaryWidget}
+        {!hasGlobalError && phase !== "upload" && summaryWidget}
 
-        {!hasError && showPlanReview(phase) && plan && (
+        {!hasGlobalError && showPlanReview(phase) && plan && (
           <>
             <LessonPlan plan={plan} />
             <button

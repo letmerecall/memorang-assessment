@@ -4,6 +4,7 @@ import {
   derivePlanApproved,
   heroSubtitle,
   isInErrorState,
+  isPrePlanPhase,
   shouldShowResumeScreen,
   showPdfUpload,
   showPlanReview,
@@ -187,6 +188,44 @@ describe("layout helpers", () => {
     expect(showSidebar("quiz", true)).toBe(true);
     expect(showSidebar("approval", true)).toBe(false);
     expect(showSidebar("quiz", false)).toBe(false);
+  });
+});
+
+describe("isPrePlanPhase", () => {
+  const basePrePlanInput = {
+    hasPlan: false,
+    hasApprovalWidget: false,
+    hasMcqWidget: false,
+    hasSummaryWidget: false,
+    showResume: false,
+  };
+
+  it("returns true when no plan, widgets, or resume screen", () => {
+    expect(isPrePlanPhase(basePrePlanInput)).toBe(true);
+  });
+
+  it("returns false when plan exists", () => {
+    expect(isPrePlanPhase({ ...basePrePlanInput, hasPlan: true })).toBe(false);
+  });
+
+  it("returns false when approval widget is active", () => {
+    expect(isPrePlanPhase({ ...basePrePlanInput, hasApprovalWidget: true })).toBe(
+      false,
+    );
+  });
+
+  it("returns false when MCQ widget is active", () => {
+    expect(isPrePlanPhase({ ...basePrePlanInput, hasMcqWidget: true })).toBe(false);
+  });
+
+  it("returns false when summary widget is active", () => {
+    expect(isPrePlanPhase({ ...basePrePlanInput, hasSummaryWidget: true })).toBe(
+      false,
+    );
+  });
+
+  it("returns false on resume screen", () => {
+    expect(isPrePlanPhase({ ...basePrePlanInput, showResume: true })).toBe(false);
   });
 });
 

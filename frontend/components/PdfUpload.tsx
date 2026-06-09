@@ -7,9 +7,17 @@ import { LEARNING_AGENT_ID } from "@/lib/agent";
 
 type PdfUploadProps = {
   onSessionStart?: (threadId: string) => void;
+  agentRunError?: string | null;
+  onAgentRetry?: () => void;
+  onClearAgentRunError?: () => void;
 };
 
-export function PdfUpload({ onSessionStart }: PdfUploadProps) {
+export function PdfUpload({
+  onSessionStart,
+  agentRunError,
+  onAgentRetry,
+  onClearAgentRunError,
+}: PdfUploadProps) {
   const { agent } = useAgent({ agentId: LEARNING_AGENT_ID });
   const inputRef = useRef<HTMLInputElement>(null);
   const [error, setError] = useState<string | null>(null);
@@ -18,6 +26,7 @@ export function PdfUpload({ onSessionStart }: PdfUploadProps) {
 
   async function handleFile(file: File) {
     setError(null);
+    onClearAgentRunError?.();
     setUploading(true);
     try {
       const form = new FormData();
@@ -30,11 +39,7 @@ export function PdfUpload({ onSessionStart }: PdfUploadProps) {
       }
       agent.setState({ pdf_text: data.text, lesson_plan: null, phase: null, error_message: null });
       onSessionStart?.(agent.threadId);
-      try {
-        await agent.runAgent();
-      } catch {
-        setError("Could not generate a lesson plan. Please try again.");
-      }
+      await agent.runAgent();
     } catch {
       setError("Network error — is the agent server running?");
     } finally {
@@ -57,6 +62,7 @@ export function PdfUpload({ onSessionStart }: PdfUploadProps) {
     });
   }
 
+  const displayError = error ?? agentRunError ?? null;
   const busy = uploading || agent.isRunning;
 
   return (
@@ -71,16 +77,18 @@ export function PdfUpload({ onSessionStart }: PdfUploadProps) {
           if (file) handleFile(file);
         }}
       />
-      {error ? (
+      {displayError ? (
         <ErrorCard
-          message={error}
+          message={displayError}
           onRetry={
-            agent.state && (agent.state as { pdf_text?: string }).pdf_text
-              ? handleRetry
-              : openFilePicker
+            agentRunError
+              ? onAgentRetry
+              : agent.state && (agent.state as { pdf_text?: string }).pdf_text
+                ? handleRetry
+                : openFilePicker
           }
           retryLabel={
-            agent.state && (agent.state as { pdf_text?: string }).pdf_text
+            agentRunError || (agent.state && (agent.state as { pdf_text?: string }).pdf_text)
               ? "Retry"
               : "Try again"
           }
