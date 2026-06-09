@@ -2,9 +2,14 @@
 
 import { useRef, useState } from "react";
 import { useAgent } from "@copilotkit/react-core/v2";
+import { LEARNING_AGENT_ID } from "@/lib/agent";
 
-export function PdfUpload({ onRunStarted }: { onRunStarted?: (threadId: string) => void }) {
-  const { agent } = useAgent({ agentId: "learning_agent" });
+type PdfUploadProps = {
+  onSessionStart?: (threadId: string) => void;
+};
+
+export function PdfUpload({ onSessionStart }: PdfUploadProps) {
+  const { agent } = useAgent({ agentId: LEARNING_AGENT_ID });
   const inputRef = useRef<HTMLInputElement>(null);
   const [error, setError] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
@@ -22,7 +27,7 @@ export function PdfUpload({ onRunStarted }: { onRunStarted?: (threadId: string) 
         return;
       }
       agent.setState({ pdf_text: data.text, lesson_plan: null });
-      onRunStarted?.(agent.threadId);
+      onSessionStart?.(agent.threadId);
       try {
         await agent.runAgent();
       } catch {

@@ -8,24 +8,21 @@ import { useLessonPlanApproval } from "@/components/LessonPlanApproval";
 import { useMcqWidget } from "@/components/McqWidget";
 import { useSummaryWidget } from "@/components/Summary";
 import { ProgressSidebar } from "@/components/ProgressSidebar";
+import { LEARNING_AGENT_ID } from "@/lib/agent";
+import {
+  derivePhase,
+  showPdfUpload,
+  showPlanReview,
+  showSidebar,
+  statusLabel,
+} from "@/lib/sessionPhase";
+import type { AgentStateShape } from "@/lib/types";
 import { useSessionManager } from "@/lib/useSessionManager";
-
-type LessonPlanData = {
-  objectives: {
-    title: string;
-    description: string;
-    difficulty: "beginner" | "intermediate" | "advanced";
-  }[];
-};
-
-type AgentStateShape = {
-  lesson_plan?: LessonPlanData;
-  current_idx?: number;
-};
 
 const RESET_STATE = {
   pdf_text: null,
   lesson_plan: null,
+  revision_feedback: null,
   current_idx: 0,
   current_mcq: null,
   attempts: 0,
@@ -35,8 +32,10 @@ const RESET_STATE = {
 };
 
 export default function HomePage() {
-  const { agent } = useAgent({ agentId: "learning_agent" });
+  const { agent } = useAgent({ agentId: LEARNING_AGENT_ID });
   const { storedThreadId, saveThreadId, clearSession } = useSessionManager();
+  const [awaitingUpload, setAwaitingUpload] = useState(false);
+  const [planApproved, setPlanApproved] = useState(false);
   const [resumeError, setResumeError] = useState<string | null>(null);
   const [resuming, setResuming] = useState(false);
 
@@ -51,23 +50,41 @@ export default function HomePage() {
     }
   }, [agent, storedThreadId]);
 
-  const approvalWidget = useLessonPlanApproval();
+  const approvalWidget = useLessonPlanApproval({
+    onDecision: (decision) => {
+      if (decision === "approve") setPlanApproved(true);
+    },
+  });
   const mcqWidget = useMcqWidget();
-  const summaryWidget = useSummaryWidget(() => {
+
+  function resetToUpload() {
     clearSession();
     agent.threadId = crypto.randomUUID();
     agent.setState(RESET_STATE);
+    setAwaitingUpload(true);
+    setPlanApproved(false);
+  }
+
+  const summaryWidget = useSummaryWidget(resetToUpload);
+
+  const phase = derivePhase({
+    awaitingUpload,
+    hasPlan: plan !== null,
+    isRunning: agent.isRunning,
+    hasApprovalWidget: Boolean(approvalWidget),
+    hasMcqWidget: Boolean(mcqWidget),
+    hasSummaryWidget: Boolean(summaryWidget),
   });
 
-  const anyWidget = approvalWidget || mcqWidget || summaryWidget;
-  const showSidebar = plan !== null && approvalWidget === null;
-
-  // Show resume screen when there's a stored session but nothing is active yet.
+  // Show resume screen when there's a stored session but nothing is currently active.
   const showResumeScreen =
     storedThreadId !== null &&
     !plan &&
-    !anyWidget &&
-    !agent.isRunning;
+    !Boolean(approvalWidget) &&
+    !Boolean(mcqWidget) &&
+    !Boolean(summaryWidget) &&
+    !agent.isRunning &&
+    !awaitingUpload;
 
   async function handleResume() {
     setResumeError(null);
@@ -81,88 +98,75 @@ export default function HomePage() {
     }
   }
 
-  function handleStartOver() {
-    clearSession();
-    agent.threadId = crypto.randomUUID();
-    agent.setState(RESET_STATE);
-  }
-
-  function statusLabel() {
-    if (agent.isRunning) return "Generating…";
-    if (approvalWidget) return "Awaiting your review";
-    if (mcqWidget) return "Answer the question";
-    if (summaryWidget) return "Quiz complete";
-    if (plan) return "Done";
-    return "Idle";
-  }
-
-  const mainContent = (
-    <>
-      <h1 className="mb-2 text-2xl font-semibold text-gray-900">AI Learning Agent</h1>
-      <p className="mb-2 text-sm text-gray-500">
-        Upload a PDF to generate a lesson plan.
-      </p>
-      <p className="text-xs text-gray-400">{statusLabel()}</p>
-
-      {showResumeScreen && (
-        <div className="mt-8 flex flex-col items-center gap-4 rounded-lg border border-blue-200 bg-blue-50 p-6 max-w-sm w-full">
-          <p className="text-sm text-blue-800 text-center font-medium">
-            You have an active lesson in progress.
-          </p>
-          <button
-            disabled={resuming}
-            onClick={handleResume}
-            className="w-full rounded bg-blue-600 px-4 py-2 text-white text-sm font-medium hover:bg-blue-700 disabled:opacity-50"
-          >
-            {resuming ? "Resuming…" : "Resume lesson"}
-          </button>
-          <button
-            onClick={handleStartOver}
-            className="text-xs text-gray-400 hover:text-gray-600 underline"
-          >
-            Start new lesson
-          </button>
-          {resumeError && (
-            <p className="text-sm text-red-600 text-center">{resumeError}</p>
-          )}
-        </div>
-      )}
-
-      {!showResumeScreen && !plan && !anyWidget && (
-        <PdfUpload onRunStarted={saveThreadId} />
-      )}
-
-      {approvalWidget}
-
-      {mcqWidget}
-
-      {summaryWidget}
-
-      {!anyWidget && !agent.isRunning && plan && (
-        <LessonPlan plan={plan} />
-      )}
-
-      {!anyWidget && !agent.isRunning && plan && (
-        <button
-          onClick={handleStartOver}
-          className="mt-6 text-xs text-gray-400 hover:text-gray-600 underline"
-        >
-          Start over
-        </button>
-      )}
-    </>
-  );
-
   return (
     <div className="flex min-h-screen bg-gray-50">
-      {showSidebar && plan && (
+      {showSidebar(phase, planApproved) && plan && (
         <ProgressSidebar
           objectives={plan.objectives}
           currentIdx={currentIdx}
         />
       )}
       <div className="flex flex-1 flex-col items-center py-16 px-4">
-        {mainContent}
+        <h1 className="mb-2 text-2xl font-semibold text-gray-900">AI Learning Agent</h1>
+        <p className="mb-2 text-sm text-gray-500">
+          Upload a PDF to generate a lesson plan.
+        </p>
+        <p className="text-xs text-gray-400" aria-live="polite" aria-atomic="true">
+          {statusLabel(phase)}
+        </p>
+
+        {showResumeScreen && (
+          <div className="mt-8 flex flex-col items-center gap-4 rounded-lg border border-blue-200 bg-blue-50 p-6 max-w-sm w-full">
+            <p className="text-sm text-blue-800 text-center font-medium">
+              You have an active lesson in progress.
+            </p>
+            <button
+              disabled={resuming}
+              onClick={handleResume}
+              className="w-full rounded bg-blue-600 px-4 py-2 text-white text-sm font-medium hover:bg-blue-700 disabled:opacity-50"
+            >
+              {resuming ? "Resuming…" : "Resume lesson"}
+            </button>
+            <button
+              disabled={resuming}
+              onClick={resetToUpload}
+              className="text-xs text-gray-400 hover:text-gray-600 underline disabled:opacity-50"
+            >
+              Start new lesson
+            </button>
+            {resumeError && (
+              <p className="text-sm text-red-600 text-center">{resumeError}</p>
+            )}
+          </div>
+        )}
+
+        {!showResumeScreen && showPdfUpload(phase) && (
+          <PdfUpload
+            onSessionStart={(threadId) => {
+              saveThreadId(threadId);
+              setAwaitingUpload(false);
+              setPlanApproved(false);
+            }}
+          />
+        )}
+
+        {approvalWidget}
+
+        {phase !== "upload" && mcqWidget}
+
+        {phase !== "upload" && summaryWidget}
+
+        {showPlanReview(phase) && plan && (
+          <>
+            <LessonPlan plan={plan} />
+            <button
+              onClick={resetToUpload}
+              className="mt-6 text-xs text-gray-400 hover:text-gray-600 underline"
+            >
+              Upload another PDF
+            </button>
+          </>
+        )}
       </div>
     </div>
   );

@@ -12,3 +12,5 @@ class AgentState(CopilotKitState):
     results: Optional[list[dict]] = None
     last_answer: Optional[dict] = None
     last_grade: Optional[dict] = None
+    asked_tutor: bool = False
+    last_tutor_reply: Optional[str] = None

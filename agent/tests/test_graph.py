@@ -172,6 +172,11 @@ def test_route_after_approve_routes_to_generate_mcq_when_no_feedback():
     assert route_after_approve(state) == "generate_mcq"
 
 
+def test_route_after_approve_routes_to_ingest_plan_when_feedback_empty():
+    state = AgentState(messages=[], revision_feedback="")
+    assert route_after_approve(state) == "ingest_plan"
+
+
 def test_graph_has_approve_node():
     from langgraph.checkpoint.memory import MemorySaver
     graph = build_graph(checkpointer=MemorySaver())
@@ -350,7 +355,9 @@ def test_ask_mcq_calls_interrupt_with_mcq_payload():
     with patch("agent.nodes.ask_mcq.interrupt") as mock_interrupt:
         mock_interrupt.return_value = {"kind": "answer", "index": 1}
         result = ask_mcq(state)
-    mock_interrupt.assert_called_once_with({"type": "mcq", "content": mcq, "feedback": None})
+    mock_interrupt.assert_called_once_with(
+        {"type": "mcq", "content": mcq, "feedback": None, "tutor_reply": None}
+    )
     assert result["last_answer"] == {"kind": "answer", "index": 1}
 
 
@@ -361,7 +368,9 @@ def test_ask_mcq_passes_last_grade_as_feedback_on_retry():
     with patch("agent.nodes.ask_mcq.interrupt") as mock_interrupt:
         mock_interrupt.return_value = {"kind": "answer", "index": 2}
         result = ask_mcq(state)
-    mock_interrupt.assert_called_once_with({"type": "mcq", "content": mcq, "feedback": last_grade})
+    mock_interrupt.assert_called_once_with(
+        {"type": "mcq", "content": mcq, "feedback": last_grade, "tutor_reply": None}
+    )
     assert result["last_answer"]["index"] == 2
 
 
@@ -373,6 +382,27 @@ def test_ask_mcq_parses_json_string_resume():
         mock_interrupt.return_value = json.dumps({"kind": "answer", "index": 3})
         result = ask_mcq(state)
     assert result["last_answer"] == {"kind": "answer", "index": 3}
+
+
+def test_ask_mcq_includes_tutor_reply_in_interrupt():
+    mcq = _mcq_dict()
+    state = AgentState(
+        messages=[],
+        current_mcq=mcq,
+        last_grade=None,
+        last_tutor_reply="Try focusing on the source quote.",
+    )
+    with patch("agent.nodes.ask_mcq.interrupt") as mock_interrupt:
+        mock_interrupt.return_value = {"kind": "answer", "index": 0}
+        ask_mcq(state)
+    mock_interrupt.assert_called_once_with(
+        {
+            "type": "mcq",
+            "content": mcq,
+            "feedback": None,
+            "tutor_reply": "Try focusing on the source quote.",
+        }
+    )
 
 
 # ── generate_mcq ───────────────────────────────────────────────────────
@@ -536,3 +566,157 @@ def test_summary_empty_results_returns_zero_score():
     MockLLM.assert_not_called()
     payload = mock_interrupt.call_args[0][0]
     assert payload["content"]["score"] == 0.0
+
+
+# ── tutor ─────────────────────────────────────────────────────────────────
+
+_TUTOR_MCQ = {
+    "question": "What process do plants use to produce food?",
+    "options": ["Respiration", "Fermentation", "Photosynthesis", "Digestion"],
+    "correct_index": 2,
+    "explanation": "Photosynthesis converts sunlight into sugar using chlorophyll.",
+    "hint": "It happens in the leaves using sunlight.",
+    "source_quote": "Plants use sunlight to produce food.",
+}
+
+
+def _tutor_state(**kwargs) -> AgentState:
+    return AgentState(
+        messages=[],
+        current_mcq=_TUTOR_MCQ,
+        pdf_text="Plants use sunlight to create energy.",
+        last_answer={"kind": "question", "text": "Can you give me a hint?"},
+        **kwargs,
+    )
+
+
+def test_tutor_prompt_excludes_correct_option_text():
+    from agent.nodes.tutor import tutor
+    with patch("agent.nodes.tutor.ChatOpenAI") as MockLLM:
+        MockLLM.return_value.invoke.return_value.content = "Here is a hint."
+        tutor(_tutor_state())
+    prompt = MockLLM.return_value.invoke.call_args[0][0]
+    assert "Photosynthesis" not in prompt  # options[correct_index] must be excluded
+
+
+def test_tutor_prompt_excludes_explanation():
+    from agent.nodes.tutor import tutor
+    with patch("agent.nodes.tutor.ChatOpenAI") as MockLLM:
+        MockLLM.return_value.invoke.return_value.content = "Here is a hint."
+        tutor(_tutor_state())
+    prompt = MockLLM.return_value.invoke.call_args[0][0]
+    assert _TUTOR_MCQ["explanation"] not in prompt
+
+
+def test_tutor_prompt_excludes_correct_index_value():
+    from agent.nodes.tutor import tutor
+    with patch("agent.nodes.tutor.ChatOpenAI") as MockLLM:
+        MockLLM.return_value.invoke.return_value.content = "Here is a hint."
+        tutor(_tutor_state())
+    prompt = MockLLM.return_value.invoke.call_args[0][0]
+    assert str(_TUTOR_MCQ["correct_index"]) not in prompt
+
+
+def test_tutor_prompt_includes_question_pdf_and_user_question():
+    from agent.nodes.tutor import tutor
+    with patch("agent.nodes.tutor.ChatOpenAI") as MockLLM:
+        MockLLM.return_value.invoke.return_value.content = "Here is a hint."
+        tutor(_tutor_state())
+    prompt = MockLLM.return_value.invoke.call_args[0][0]
+    assert _TUTOR_MCQ["question"] in prompt
+    assert "Plants use sunlight to create energy." in prompt
+    assert "Can you give me a hint?" in prompt
+
+
+def test_tutor_sets_asked_tutor_true():
+    from agent.nodes.tutor import tutor
+    with patch("agent.nodes.tutor.ChatOpenAI") as MockLLM:
+        MockLLM.return_value.invoke.return_value.content = "Here is a hint."
+        result = tutor(_tutor_state())
+    assert result.get("asked_tutor") is True
+    assert result.get("last_tutor_reply") == "Here is a hint."
+
+
+def test_tutor_adds_ai_message_to_messages():
+    from agent.nodes.tutor import tutor
+    from langchain_core.messages import AIMessage
+    with patch("agent.nodes.tutor.ChatOpenAI") as MockLLM:
+        MockLLM.return_value.invoke.return_value.content = "Study the chloroplast."
+        result = tutor(_tutor_state())
+    assert len(result["messages"]) == 1
+    assert isinstance(result["messages"][0], AIMessage)
+    assert result["messages"][0].content == "Study the chloroplast."
+
+
+# ── grade + asked_tutor ────────────────────────────────────────────────────
+
+def test_grade_records_asked_tutor_true_from_state():
+    state = AgentState(
+        messages=[],
+        lesson_plan=_plan_with_one_objective(),
+        current_idx=0,
+        current_mcq=_mcq_dict(),
+        attempts=0,
+        results=None,
+        last_answer={"kind": "answer", "index": 2},
+        asked_tutor=True,
+    )
+    result = grade(state)
+    assert result["results"][0]["asked_tutor"] is True
+
+
+def test_grade_records_asked_tutor_false_when_not_set():
+    state = AgentState(
+        messages=[],
+        lesson_plan=_plan_with_one_objective(),
+        current_idx=0,
+        current_mcq=_mcq_dict(),
+        attempts=0,
+        results=None,
+        last_answer={"kind": "answer", "index": 2},
+    )
+    result = grade(state)
+    assert result["results"][0]["asked_tutor"] is False
+
+
+# ── generate_mcq resets asked_tutor ───────────────────────────────────────
+
+def test_generate_mcq_resets_asked_tutor():
+    state = AgentState(
+        messages=[],
+        pdf_text="some educational text",
+        lesson_plan={
+            "objectives": [
+                {"title": "Topic A", "description": "Learn A.", "difficulty": "beginner"}
+            ]
+        },
+        current_idx=0,
+        attempts=0,
+        last_grade=None,
+        asked_tutor=True,
+        last_tutor_reply="Old hint.",
+    )
+    with patch("agent.nodes.generate_mcq.ChatOpenAI") as MockLLM:
+        mock_instance = MockLLM.return_value.with_structured_output.return_value
+        mock_instance.invoke.return_value = _mock_mcq_model()
+        result = generate_mcq(state)
+    assert result["asked_tutor"] is False
+    assert result["last_tutor_reply"] is None
+
+
+# ── graph wiring ──────────────────────────────────────────────────────────
+
+def test_graph_has_tutor_node():
+    from langgraph.checkpoint.memory import MemorySaver
+    graph = build_graph(checkpointer=MemorySaver())
+    assert "tutor" in graph.get_graph().nodes
+
+
+def test_tutor_prompt_contains_refusal_instruction():
+    from agent.nodes.tutor import tutor
+    with patch("agent.nodes.tutor.ChatOpenAI") as MockLLM:
+        MockLLM.return_value.invoke.return_value.content = "Here is a hint."
+        tutor(_tutor_state())
+    prompt = MockLLM.return_value.invoke.call_args[0][0]
+    # Must contain an explicit instruction to refuse direct answer requests
+    assert "do not" in prompt.lower() or "refuse" in prompt.lower() or "decline" in prompt.lower()
