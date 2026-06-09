@@ -1,8 +1,17 @@
 import json
 import os
+import time
 from typing import Any, Callable, Type
 
 from langchain_openai import ChatOpenAI
+from openai import APIConnectionError, APITimeoutError, InternalServerError, RateLimitError
+
+_TRANSIENT_ERRORS = (
+    RateLimitError,
+    APIConnectionError,
+    APITimeoutError,
+    InternalServerError,
+)
 
 
 def _parse_resume(raw: Any) -> dict:
@@ -14,6 +23,29 @@ def _parse_resume(raw: Any) -> dict:
     if isinstance(raw, dict):
         return raw
     return {}
+
+
+def _is_transient_error(err: Exception) -> bool:
+    if isinstance(err, _TRANSIENT_ERRORS):
+        return True
+    cause = err.__cause__
+    return isinstance(cause, _TRANSIENT_ERRORS)
+
+
+def _invoke_with_backoff(fn: Callable[[], Any], *, max_attempts: int = 3) -> Any:
+    """Retry transient OpenAI/LangChain API errors with exponential backoff."""
+    last_err: Exception | None = None
+    for attempt in range(max_attempts):
+        try:
+            return fn()
+        except Exception as err:
+            if not _is_transient_error(err):
+                raise
+            last_err = err
+            if attempt < max_attempts - 1:
+                time.sleep(0.5 * (2**attempt))
+    assert last_err is not None
+    raise last_err
 
 
 def make_llm(
@@ -39,11 +71,11 @@ def invoke_with_validation_retry(
     error_class: Type[Exception],
 ) -> Any:
     try:
-        return llm.invoke(prompt)
+        return _invoke_with_backoff(lambda: llm.invoke(prompt))
     except Exception as first_err:
         retry_prompt = retry_suffix_fn(prompt, first_err)
         try:
-            return llm.invoke(retry_prompt)
+            return _invoke_with_backoff(lambda: llm.invoke(retry_prompt))
         except Exception as second_err:
             raise error_class(str(second_err)) from second_err
 
@@ -54,13 +86,13 @@ def invoke_with_content_retry(
     error_class: Type[Exception],
 ) -> str:
     try:
-        return llm.invoke(prompt).content
+        return _invoke_with_backoff(lambda: llm.invoke(prompt).content)
     except Exception as first_err:
         retry_prompt = (
             f"{prompt}\n\nYour previous response failed: {first_err}. "
             "Please try again with a valid response."
         )
         try:
-            return llm.invoke(retry_prompt).content
+            return _invoke_with_backoff(lambda: llm.invoke(retry_prompt).content)
         except Exception as second_err:
             raise error_class(str(second_err)) from second_err

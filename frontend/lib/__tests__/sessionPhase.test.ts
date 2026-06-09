@@ -3,6 +3,7 @@ import {
   derivePhase,
   derivePlanApproved,
   heroSubtitle,
+  isInErrorState,
   shouldShowResumeScreen,
   showPdfUpload,
   showPlanReview,
@@ -58,6 +59,10 @@ describe("derivePhase", () => {
 
   it("defaults to upload", () => {
     expect(derivePhase(baseInput)).toBe("upload");
+  });
+
+  it("returns error when hasError is true", () => {
+    expect(derivePhase({ ...baseInput, hasError: true })).toBe("error");
   });
 });
 
@@ -137,6 +142,14 @@ describe("statusLabel", () => {
     expect(statusLabel("planIdle")).toBe("Plan ready");
     expect(statusLabel("planIdle")).not.toBe("Done");
   });
+
+  it("shows checking answer while running during quiz", () => {
+    expect(statusLabel("quiz", true)).toBe("Checking answer…");
+  });
+
+  it("shows error label for error phase", () => {
+    expect(statusLabel("error")).toBe("Error — tap Retry to continue");
+  });
 });
 
 describe("statusLabelForPage", () => {
@@ -174,5 +187,16 @@ describe("layout helpers", () => {
     expect(showSidebar("quiz", true)).toBe(true);
     expect(showSidebar("approval", true)).toBe(false);
     expect(showSidebar("quiz", false)).toBe(false);
+  });
+});
+
+describe("isInErrorState", () => {
+  it("returns true when phase is error", () => {
+    expect(isInErrorState({ phase: "error" })).toBe(true);
+  });
+
+  it("returns false otherwise", () => {
+    expect(isInErrorState({ phase: null })).toBe(false);
+    expect(isInErrorState({})).toBe(false);
   });
 });
