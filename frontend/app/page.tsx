@@ -33,7 +33,7 @@ const RESET_STATE = {
 
 export default function HomePage() {
   const { agent } = useAgent({ agentId: LEARNING_AGENT_ID });
-  const { storedThreadId, saveThreadId, clearSession } = useSessionManager();
+  const { storedThreadId, saveThreadId, clearSession, loaded } = useSessionManager();
   const [awaitingUpload, setAwaitingUpload] = useState(false);
   const [planApproved, setPlanApproved] = useState(false);
   const [resumeError, setResumeError] = useState<string | null>(null);
@@ -115,7 +115,7 @@ export default function HomePage() {
           {statusLabel(phase)}
         </p>
 
-        {showResumeScreen && (
+        {loaded && showResumeScreen && (
           <div className="mt-8 flex flex-col items-center gap-4 rounded-lg border border-blue-200 bg-blue-50 p-6 max-w-sm w-full">
             <p className="text-sm text-blue-800 text-center font-medium">
               You have an active lesson in progress.
@@ -140,13 +140,14 @@ export default function HomePage() {
           </div>
         )}
 
-        {!showResumeScreen && showPdfUpload(phase) && (
+        {loaded && !showResumeScreen && showPdfUpload(phase) && (
           <PdfUpload
             onSessionStart={(threadId) => {
               saveThreadId(threadId);
               setAwaitingUpload(false);
               setPlanApproved(false);
             }}
+            onRunFailed={clearSession}
           />
         )}
 

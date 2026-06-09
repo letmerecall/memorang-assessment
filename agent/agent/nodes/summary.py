@@ -20,10 +20,14 @@ def _generate_tips(weak_objectives: list[str], pdf_text: str) -> str:
     try:
         return llm.invoke(prompt).content
     except Exception as first_err:
+        retry_prompt = (
+            f"{prompt}\n\nYour previous response failed: {first_err}. "
+            "Please try again with a valid response."
+        )
         try:
-            return llm.invoke(prompt).content
+            return llm.invoke(retry_prompt).content
         except Exception as second_err:
-            raise RuntimeError(str(second_err)) from first_err
+            raise RuntimeError(str(second_err)) from second_err
 
 
 def summary(state: AgentState) -> dict:
