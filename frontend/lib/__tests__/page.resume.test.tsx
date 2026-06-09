@@ -110,4 +110,13 @@ describe("HomePage resume error handling", () => {
       ).not.toBeDisabled();
     });
   });
+
+  it("shows error message when runAgent Promise rejects", async () => {
+    mockRunAgent.mockRejectedValue(new Error("network"));
+    render(<HomePage />);
+    await userEvent.click(screen.getByRole("button", { name: /Resume lesson/i }));
+    await waitFor(() =>
+      expect(screen.getByText(/could not resume/i)).toBeInTheDocument(),
+    );
+  });
 });

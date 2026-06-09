@@ -23,6 +23,9 @@ import {
 import type { AgentStateShape } from "@/lib/types";
 import { useSessionManager } from "@/lib/useSessionManager";
 
+const RESUME_ERROR =
+  "Could not resume — the session may have expired. Start a new lesson.";
+
 export default function HomePage() {
   const { agent } = useAgent({ agentId: LEARNING_AGENT_ID });
   const { storedThreadId, saveThreadId, clearSession, loaded } = useSessionManager();
@@ -64,9 +67,7 @@ export default function HomePage() {
     if (!resuming) return;
     const sub = agent.subscribe({
       onRunErrorEvent: () => {
-        setResumeError(
-          "Could not resume — the session may have expired. Start a new lesson.",
-        );
+        setResumeError(RESUME_ERROR);
         setResuming(false);
       },
       onRunFinishedEvent: () => {
@@ -82,9 +83,7 @@ export default function HomePage() {
     // Fire and forget — lifecycle handled by the subscription effect above.
     // Catch only in case CopilotKit rejects the Promise (rare).
     agent.runAgent().catch(() => {
-      setResumeError(
-        "Could not resume — the session may have expired. Start a new lesson.",
-      );
+      setResumeError(RESUME_ERROR);
       setResuming(false);
     });
   }
