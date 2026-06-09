@@ -447,8 +447,9 @@ def test_generate_mcq_resets_attempts_and_clears_last_grade():
     assert result["attempts"] == 0
     assert result["last_grade"] is None
     assert result["current_mcq"]["question"] == "Q?"
-    assert result["current_mcq"]["options"] == ["A", "B", "C", "D"]
-    assert result["current_mcq"]["correct_index"] == 1
+    # Verify the shuffle invariant: correct_index points to the correct answer text ("B")
+    mcq = result["current_mcq"]
+    assert mcq["options"][mcq["correct_index"]] == "B"
 
 
 def test_generate_mcq_includes_objective_and_pdf_in_prompt():
@@ -486,6 +487,54 @@ def test_generate_mcq_raises_when_index_out_of_range():
     )
     with pytest.raises(MCQGenerationError, match="out of range"):
         generate_mcq(state)
+
+
+def test_generate_mcq_shuffles_options():
+    """After shuffle, correct_index must point to the original correct answer text."""
+    state = AgentState(
+        messages=[],
+        pdf_text="content",
+        lesson_plan={
+            "objectives": [
+                {"title": "Topic", "description": "Desc.", "difficulty": "beginner"}
+            ]
+        },
+        current_idx=0,
+    )
+    with patch("agent.nodes.generate_mcq.make_llm") as MockLLM:
+        mock_instance = MockLLM.return_value
+        mock_instance.invoke.return_value = _mock_mcq_model()
+        result = generate_mcq(state)
+
+    mcq = result["current_mcq"]
+    correct_text = "B"
+    assert mcq["options"][mcq["correct_index"]] == correct_text
+
+
+def test_generate_mcq_shuffle_is_deterministic_per_question():
+    """Same question text → same shuffle (seeded by question text for reproducibility)."""
+    state = AgentState(
+        messages=[],
+        pdf_text="content",
+        lesson_plan={
+            "objectives": [
+                {"title": "Topic", "description": "Desc.", "difficulty": "beginner"}
+            ]
+        },
+        current_idx=0,
+    )
+    with patch("agent.nodes.generate_mcq.make_llm") as MockLLM:
+        mock_instance = MockLLM.return_value
+        mock_instance.invoke.return_value = _mock_mcq_model()
+        result1 = generate_mcq(state)
+
+    with patch("agent.nodes.generate_mcq.make_llm") as MockLLM:
+        mock_instance = MockLLM.return_value
+        mock_instance.invoke.return_value = _mock_mcq_model()
+        result2 = generate_mcq(state)
+
+    assert result1["current_mcq"]["options"] == result2["current_mcq"]["options"]
+    assert result1["current_mcq"]["correct_index"] == result2["current_mcq"]["correct_index"]
 
 
 # ── summary ────────────────────────────────────────────────────────────
