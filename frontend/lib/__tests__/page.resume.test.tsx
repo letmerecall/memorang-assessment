@@ -119,4 +119,13 @@ describe("HomePage resume error handling", () => {
       expect(screen.getByText(/could not resume/i)).toBeInTheDocument(),
     );
   });
+
+  it("subscribes once and does not resubscribe on Resume click", async () => {
+    render(<HomePage />);
+    expect(mockAgent.subscribe).toHaveBeenCalledTimes(1);
+
+    await userEvent.click(screen.getByRole("button", { name: /Resume lesson/i }));
+
+    expect(mockAgent.subscribe).toHaveBeenCalledTimes(1);
+  });
 });

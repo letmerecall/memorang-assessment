@@ -14,3 +14,5 @@ class AgentState(CopilotKitState):
     last_grade: Optional[dict] = None
     asked_tutor: bool = False
     last_tutor_reply: Optional[str] = None
+    phase: Optional[str] = None
+    error_message: Optional[str] = None

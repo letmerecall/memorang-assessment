@@ -61,4 +61,6 @@ export type AgentStateShape = {
   results?: SummaryResult[] | null;
   asked_tutor?: boolean;
   last_tutor_reply?: string | null;
+  phase?: string | null;
+  error_message?: string | null;
 };

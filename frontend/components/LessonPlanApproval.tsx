@@ -11,9 +11,10 @@ type PlanApprovalFormProps = {
   objectives: Objective[];
   resolve: (response: unknown) => void;
   onDecision?: (decision: "approve" | "revise") => void;
+  isRunning?: boolean;
 };
 
-function PlanApprovalForm({ objectives, resolve, onDecision }: PlanApprovalFormProps) {
+function PlanApprovalForm({ objectives, resolve, onDecision, isRunning = false }: PlanApprovalFormProps) {
   const [feedback, setFeedback] = useState("");
 
   return (
@@ -27,11 +28,12 @@ function PlanApprovalForm({ objectives, resolve, onDecision }: PlanApprovalFormP
 
       <div className="flex flex-col gap-3">
         <button
+          disabled={isRunning}
           onClick={() => {
             onDecision?.("approve");
             resolve({ decision: "approve" });
           }}
-          className="rounded bg-green-600 px-6 py-2 text-white text-sm font-medium hover:bg-green-700"
+          className="rounded bg-green-600 px-6 py-2 text-white text-sm font-medium hover:bg-green-700 disabled:opacity-50"
         >
           Approve
         </button>
@@ -42,10 +44,11 @@ function PlanApprovalForm({ objectives, resolve, onDecision }: PlanApprovalFormP
             onChange={(e) => setFeedback(e.target.value)}
             placeholder="Describe what you'd like changed…"
             rows={3}
-            className="rounded border border-gray-300 p-2 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-amber-400"
+            disabled={isRunning}
+            className="rounded border border-gray-300 p-2 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-amber-400 disabled:bg-gray-50"
           />
           <button
-            disabled={!feedback.trim()}
+            disabled={!feedback.trim() || isRunning}
             onClick={() => {
               onDecision?.("revise");
               resolve({ decision: "revise", feedback: feedback.trim() });
@@ -53,9 +56,12 @@ function PlanApprovalForm({ objectives, resolve, onDecision }: PlanApprovalFormP
             }}
             className="rounded bg-amber-500 px-6 py-2 text-white text-sm font-medium hover:bg-amber-600 disabled:opacity-50"
           >
-            Request changes
+            {isRunning ? "Regenerating plan…" : "Request changes"}
           </button>
         </div>
+        {isRunning && (
+          <p className="text-xs text-amber-600">Regenerating plan…</p>
+        )}
       </div>
     </div>
   );
@@ -63,10 +69,12 @@ function PlanApprovalForm({ objectives, resolve, onDecision }: PlanApprovalFormP
 
 type UseLessonPlanApprovalOptions = {
   onDecision?: (decision: "approve" | "revise") => void;
+  isRunning?: boolean;
 };
 
 export function useLessonPlanApproval(options?: UseLessonPlanApprovalOptions) {
   const onDecision = options?.onDecision;
+  const isRunning = options?.isRunning ?? false;
   return useInterrupt({
     agentId: LEARNING_AGENT_ID,
     renderInChat: false,
@@ -82,6 +90,7 @@ export function useLessonPlanApproval(options?: UseLessonPlanApprovalOptions) {
           objectives={payload.content.objectives}
           resolve={resolve}
           onDecision={onDecision}
+          isRunning={isRunning}
         />
       );
     },

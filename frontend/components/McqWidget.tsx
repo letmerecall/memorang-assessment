@@ -17,7 +17,7 @@ type McqFormProps = {
   options: string[];
   feedback: MCQFeedback;
   tutorReply: string | null;
-  tutorLoading: boolean;
+  isRunning: boolean;
   onSubmit: (index: number) => void;
   onAsk: (text: string) => void;
 };
@@ -27,14 +27,20 @@ function McqForm({
   options,
   feedback,
   tutorReply,
-  tutorLoading,
+  isRunning,
   onSubmit,
   onAsk,
 }: McqFormProps) {
   const [selected, setSelected] = useState<number | null>(null);
   const [askText, setAskText] = useState("");
+  const [pending, setPending] = useState<"submit" | "ask" | null>(null);
+
+  const submitLoading = pending === "submit" && isRunning;
+  const tutorLoading = pending === "ask" && isRunning;
+  const disabled = submitLoading || tutorLoading;
 
   function handleAsk(text: string) {
+    setPending("ask");
     onAsk(text);
     setAskText("");
   }
@@ -64,7 +70,7 @@ function McqForm({
                   value={i}
                   checked={selected === i}
                   onChange={() => setSelected(i)}
-                  disabled={tutorLoading}
+                  disabled={disabled}
                   className="mt-0.5 shrink-0"
                 />
                 <span className="text-sm text-gray-800">{opt}</span>
@@ -75,13 +81,16 @@ function McqForm({
       </fieldset>
 
       <button
-        disabled={selected === null || tutorLoading}
+        disabled={selected === null || disabled}
         onClick={() => {
-          if (selected !== null) onSubmit(selected);
+          if (selected !== null) {
+            setPending("submit");
+            onSubmit(selected);
+          }
         }}
         className="rounded bg-blue-600 px-6 py-2 text-white text-sm font-medium hover:bg-blue-700 disabled:opacity-50"
       >
-        Submit
+        {submitLoading ? "Checking answer…" : "Submit"}
       </button>
 
       <div className="mt-6 border-t border-gray-100 pt-4">
@@ -100,16 +109,16 @@ function McqForm({
             value={askText}
             onChange={(e) => setAskText(e.target.value)}
             onKeyDown={(e) => {
-              if (e.key === "Enter" && askText.trim() && !tutorLoading) {
+              if (e.key === "Enter" && askText.trim() && !disabled) {
                 handleAsk(askText.trim());
               }
             }}
-            disabled={tutorLoading}
+            disabled={disabled}
             placeholder="Ask your tutor…"
             className="flex-1 rounded border border-gray-300 px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400 disabled:bg-gray-50"
           />
           <button
-            disabled={!askText.trim() || tutorLoading}
+            disabled={!askText.trim() || disabled}
             onClick={() => {
               if (askText.trim()) handleAsk(askText.trim());
             }}
@@ -143,7 +152,7 @@ export function useMcqWidget() {
           options={options}
           feedback={payload.feedback}
           tutorReply={payload.tutor_reply ?? null}
-          tutorLoading={agent.isRunning}
+          isRunning={agent.isRunning}
           onSubmit={(index) => resolve({ kind: "answer", index })}
           onAsk={(text) => resolve({ kind: "question", text })}
         />

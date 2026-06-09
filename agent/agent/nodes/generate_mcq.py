@@ -25,14 +25,14 @@ def _shuffle_mcq(mcq: MCQ) -> dict:
 
 
 def generate_mcq(state: AgentState) -> dict:
-    llm = make_llm(temperature=0, structured_output=MCQ)
-
     objectives = (state.get("lesson_plan") or {}).get("objectives", [])
     current_idx = state.get("current_idx", 0)
     if current_idx < 0 or current_idx >= len(objectives):
         raise MCQGenerationError(
             f"Objective index {current_idx} out of range (have {len(objectives)} objectives)"
         )
+
+    llm = make_llm(temperature=0, structured_output=MCQ)
     objective = objectives[current_idx]
     pdf_text = trim_to_budget(state.get("pdf_text") or "")
 

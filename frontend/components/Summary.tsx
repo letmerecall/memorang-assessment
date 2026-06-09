@@ -63,14 +63,17 @@ export function useSummaryWidget(onDone?: () => void) {
     agentId: LEARNING_AGENT_ID,
     renderInChat: false,
     enabled: (event) => parseSummaryPayload(event.value) !== null,
-    render: ({ event, resolve }) => {
+    render: ({ event }) => {
       const payload = parseSummaryPayload(event.value);
       if (!payload) return <></>;
       return (
         <SummaryCard
           content={payload.content}
           onDone={() => {
-            resolve({});
+            // Do not call resolve() here. It triggers async runAgent(), which can
+            // race with resetSession() and restart ingest_plan on a fresh empty thread.
+            // resetSession() assigns a new threadId and sets awaitingUpload, which
+            // hides this widget and returns the user to the upload screen.
             onDone?.();
           }}
         />

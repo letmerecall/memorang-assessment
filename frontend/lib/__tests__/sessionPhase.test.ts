@@ -3,6 +3,8 @@ import {
   derivePhase,
   derivePlanApproved,
   heroSubtitle,
+  isInErrorState,
+  isPrePlanPhase,
   shouldShowResumeScreen,
   showPdfUpload,
   showPlanReview,
@@ -58,6 +60,10 @@ describe("derivePhase", () => {
 
   it("defaults to upload", () => {
     expect(derivePhase(baseInput)).toBe("upload");
+  });
+
+  it("returns error when hasError is true", () => {
+    expect(derivePhase({ ...baseInput, hasError: true })).toBe("error");
   });
 });
 
@@ -137,6 +143,14 @@ describe("statusLabel", () => {
     expect(statusLabel("planIdle")).toBe("Plan ready");
     expect(statusLabel("planIdle")).not.toBe("Done");
   });
+
+  it("shows checking answer while running during quiz", () => {
+    expect(statusLabel("quiz", true)).toBe("Checking answer…");
+  });
+
+  it("shows error label for error phase", () => {
+    expect(statusLabel("error")).toBe("Error — tap Retry to continue");
+  });
 });
 
 describe("statusLabelForPage", () => {
@@ -174,5 +188,54 @@ describe("layout helpers", () => {
     expect(showSidebar("quiz", true)).toBe(true);
     expect(showSidebar("approval", true)).toBe(false);
     expect(showSidebar("quiz", false)).toBe(false);
+  });
+});
+
+describe("isPrePlanPhase", () => {
+  const basePrePlanInput = {
+    hasPlan: false,
+    hasApprovalWidget: false,
+    hasMcqWidget: false,
+    hasSummaryWidget: false,
+    showResume: false,
+  };
+
+  it("returns true when no plan, widgets, or resume screen", () => {
+    expect(isPrePlanPhase(basePrePlanInput)).toBe(true);
+  });
+
+  it("returns false when plan exists", () => {
+    expect(isPrePlanPhase({ ...basePrePlanInput, hasPlan: true })).toBe(false);
+  });
+
+  it("returns false when approval widget is active", () => {
+    expect(isPrePlanPhase({ ...basePrePlanInput, hasApprovalWidget: true })).toBe(
+      false,
+    );
+  });
+
+  it("returns false when MCQ widget is active", () => {
+    expect(isPrePlanPhase({ ...basePrePlanInput, hasMcqWidget: true })).toBe(false);
+  });
+
+  it("returns false when summary widget is active", () => {
+    expect(isPrePlanPhase({ ...basePrePlanInput, hasSummaryWidget: true })).toBe(
+      false,
+    );
+  });
+
+  it("returns false on resume screen", () => {
+    expect(isPrePlanPhase({ ...basePrePlanInput, showResume: true })).toBe(false);
+  });
+});
+
+describe("isInErrorState", () => {
+  it("returns true when phase is error", () => {
+    expect(isInErrorState({ phase: "error" })).toBe(true);
+  });
+
+  it("returns false otherwise", () => {
+    expect(isInErrorState({ phase: null })).toBe(false);
+    expect(isInErrorState({})).toBe(false);
   });
 });

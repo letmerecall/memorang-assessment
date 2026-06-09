@@ -6,7 +6,8 @@ export type SessionPhase =
   | "approval"
   | "quiz"
   | "summary"
-  | "planIdle";
+  | "planIdle"
+  | "error";
 
 export type PhaseInput = {
   awaitingUpload: boolean;
@@ -15,6 +16,7 @@ export type PhaseInput = {
   hasApprovalWidget: boolean;
   hasMcqWidget: boolean;
   hasSummaryWidget: boolean;
+  hasError?: boolean;
 };
 
 export type ResumeScreenInput = {
@@ -28,6 +30,7 @@ export type ResumeScreenInput = {
 };
 
 export function derivePhase(input: PhaseInput): SessionPhase {
+  if (input.hasError) return "error";
   if (input.awaitingUpload) return "upload";
   if (input.hasMcqWidget) return "quiz";
   if (input.hasSummaryWidget) return "summary";
@@ -61,29 +64,32 @@ export function shouldShowResumeScreen(input: ResumeScreenInput): boolean {
   );
 }
 
-export function statusLabel(phase: SessionPhase): string {
+export function statusLabel(phase: SessionPhase, isRunning = false): string {
   switch (phase) {
     case "upload":
       return "Idle";
     case "generating":
       return "Generating…";
     case "approval":
-      return "Awaiting your review";
+      return isRunning ? "Regenerating plan…" : "Awaiting your review";
     case "quiz":
-      return "Answer the question";
+      return isRunning ? "Checking answer…" : "Answer the question";
     case "summary":
-      return "Quiz complete";
+      return isRunning ? "Generating summary…" : "Quiz complete";
     case "planIdle":
       return "Plan ready";
+    case "error":
+      return "Error — tap Retry to continue";
   }
 }
 
 export function statusLabelForPage(
   phase: SessionPhase,
   showResume: boolean,
+  isRunning = false,
 ): string {
   if (showResume) return "Resume available";
-  return statusLabel(phase);
+  return statusLabel(phase, isRunning);
 }
 
 export function heroSubtitle(showResume: boolean): string {
@@ -103,4 +109,26 @@ export function showSidebar(phase: SessionPhase, planApproved: boolean): boolean
 
 export function showPlanReview(phase: SessionPhase): boolean {
   return phase === "planIdle";
+}
+
+export function isInErrorState(state: AgentStateShape): boolean {
+  return state.phase === "error";
+}
+
+export type PrePlanPhaseInput = {
+  hasPlan: boolean;
+  hasApprovalWidget: boolean;
+  hasMcqWidget: boolean;
+  hasSummaryWidget: boolean;
+  showResume: boolean;
+};
+
+export function isPrePlanPhase(input: PrePlanPhaseInput): boolean {
+  return (
+    !input.hasPlan &&
+    !input.hasApprovalWidget &&
+    !input.hasMcqWidget &&
+    !input.hasSummaryWidget &&
+    !input.showResume
+  );
 }
