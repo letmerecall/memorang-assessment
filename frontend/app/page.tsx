@@ -8,34 +8,26 @@ import { useLessonPlanApproval } from "@/components/LessonPlanApproval";
 import { useMcqWidget } from "@/components/McqWidget";
 import { useSummaryWidget } from "@/components/Summary";
 import { ProgressSidebar } from "@/components/ProgressSidebar";
+import { RESET_STATE } from "@/lib/agentState";
 import { LEARNING_AGENT_ID } from "@/lib/agent";
 import {
   derivePhase,
+  derivePlanApproved,
+  heroSubtitle,
+  shouldShowResumeScreen,
   showPdfUpload,
   showPlanReview,
   showSidebar,
-  statusLabel,
+  statusLabelForPage,
 } from "@/lib/sessionPhase";
 import type { AgentStateShape } from "@/lib/types";
 import { useSessionManager } from "@/lib/useSessionManager";
-
-const RESET_STATE = {
-  pdf_text: null,
-  lesson_plan: null,
-  revision_feedback: null,
-  current_idx: 0,
-  current_mcq: null,
-  attempts: 0,
-  results: null,
-  last_answer: null,
-  last_grade: null,
-};
 
 export default function HomePage() {
   const { agent } = useAgent({ agentId: LEARNING_AGENT_ID });
   const { storedThreadId, saveThreadId, clearSession, loaded } = useSessionManager();
   const [awaitingUpload, setAwaitingUpload] = useState(false);
-  const [planApproved, setPlanApproved] = useState(false);
+  const [localApproved, setLocalApproved] = useState(false);
   const [resumeError, setResumeError] = useState<string | null>(null);
   const [resuming, setResuming] = useState(false);
 
@@ -52,20 +44,21 @@ export default function HomePage() {
 
   const approvalWidget = useLessonPlanApproval({
     onDecision: (decision) => {
-      if (decision === "approve") setPlanApproved(true);
+      if (decision === "approve") setLocalApproved(true);
     },
   });
   const mcqWidget = useMcqWidget();
 
-  function resetToUpload() {
+  function resetSession() {
     clearSession();
     agent.threadId = crypto.randomUUID();
     agent.setState(RESET_STATE);
     setAwaitingUpload(true);
-    setPlanApproved(false);
+    setLocalApproved(false);
+    setResumeError(null);
   }
 
-  const summaryWidget = useSummaryWidget(resetToUpload);
+  const summaryWidget = useSummaryWidget(resetSession);
 
   const phase = derivePhase({
     awaitingUpload,
@@ -76,15 +69,18 @@ export default function HomePage() {
     hasSummaryWidget: Boolean(summaryWidget),
   });
 
-  // Show resume screen when there's a stored session but nothing is currently active.
-  const showResumeScreen =
-    storedThreadId !== null &&
-    !plan &&
-    !Boolean(approvalWidget) &&
-    !Boolean(mcqWidget) &&
-    !Boolean(summaryWidget) &&
-    !agent.isRunning &&
-    !awaitingUpload;
+  const planApproved =
+    derivePlanApproved(state, Boolean(approvalWidget)) || localApproved;
+
+  const showResumeScreen = shouldShowResumeScreen({
+    storedThreadId,
+    hasPlan: plan !== null,
+    hasApprovalWidget: Boolean(approvalWidget),
+    hasMcqWidget: Boolean(mcqWidget),
+    hasSummaryWidget: Boolean(summaryWidget),
+    isRunning: agent.isRunning,
+    awaitingUpload,
+  });
 
   async function handleResume() {
     setResumeError(null);
@@ -109,10 +105,10 @@ export default function HomePage() {
       <div className="flex flex-1 flex-col items-center py-16 px-4">
         <h1 className="mb-2 text-2xl font-semibold text-gray-900">AI Learning Agent</h1>
         <p className="mb-2 text-sm text-gray-500">
-          Upload a PDF to generate a lesson plan.
+          {heroSubtitle(showResumeScreen)}
         </p>
         <p className="text-xs text-gray-400" aria-live="polite" aria-atomic="true">
-          {statusLabel(phase)}
+          {statusLabelForPage(phase, showResumeScreen)}
         </p>
 
         {loaded && showResumeScreen && (
@@ -129,7 +125,7 @@ export default function HomePage() {
             </button>
             <button
               disabled={resuming}
-              onClick={resetToUpload}
+              onClick={resetSession}
               className="text-xs text-gray-400 hover:text-gray-600 underline disabled:opacity-50"
             >
               Start new lesson
@@ -145,9 +141,9 @@ export default function HomePage() {
             onSessionStart={(threadId) => {
               saveThreadId(threadId);
               setAwaitingUpload(false);
-              setPlanApproved(false);
+              setLocalApproved(false);
             }}
-            onRunFailed={clearSession}
+            onRunFailed={resetSession}
           />
         )}
 
@@ -161,7 +157,7 @@ export default function HomePage() {
           <>
             <LessonPlan plan={plan} />
             <button
-              onClick={resetToUpload}
+              onClick={resetSession}
               className="mt-6 text-xs text-gray-400 hover:text-gray-600 underline"
             >
               Upload another PDF
