@@ -329,6 +329,12 @@ hint + penalty-free retry → step 4; proceed through all MCQs → quiz loop; su
   Future work: OCR fallback (e.g. Tesseract) for image PDFs.
 - One MCQ per objective in the MVP (state is list-shaped to allow N later).
 - Single-document, single-user lesson at a time (no multi-doc library / accounts).
+- **Plan revision feedback is best-effort** — feedback routes back to `ingest_plan`, but the
+  prompt/schema hard-require 3–5 objectives, feedback is a soft append-only hint, and each
+  revision regenerates from the PDF rather than editing the rejected plan. Requests like
+  "only 2 objectives" cannot be honored.
+- **MCQ correct-answer position bias** — LLMs often put the answer in option 1 or 2; options
+  are not shuffled after generation. Future work: post-generation shuffle or prompt constraint.
 
 ## Risks / mitigations
 - *CopilotKit API churn* → pin versions, follow installed-version docs (flagged above).

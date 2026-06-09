@@ -10,8 +10,8 @@ def extract_text(file_bytes: bytes) -> str:
         doc = fitz.open(stream=file_bytes, filetype="pdf")
     except Exception as e:
         raise NoExtractableTextError(f"could not open file as PDF: {e}") from e
-    text = "".join(page.get_text() for page in doc)
-    doc.close()
+    with doc:
+        text = "".join(page.get_text() for page in doc)
     text = text.strip()
     if not text:
         raise NoExtractableTextError("no extractable text found in this PDF")

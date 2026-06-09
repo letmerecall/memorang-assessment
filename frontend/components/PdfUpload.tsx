@@ -5,10 +5,11 @@ import { useAgent } from "@copilotkit/react-core/v2";
 import { LEARNING_AGENT_ID } from "@/lib/agent";
 
 type PdfUploadProps = {
-  onSessionStart?: () => void;
+  onSessionStart?: (threadId: string) => void;
+  onRunFailed?: () => void;
 };
 
-export function PdfUpload({ onSessionStart }: PdfUploadProps) {
+export function PdfUpload({ onSessionStart, onRunFailed }: PdfUploadProps) {
   const { agent } = useAgent({ agentId: LEARNING_AGENT_ID });
   const inputRef = useRef<HTMLInputElement>(null);
   const [error, setError] = useState<string | null>(null);
@@ -27,10 +28,11 @@ export function PdfUpload({ onSessionStart }: PdfUploadProps) {
         return;
       }
       agent.setState({ pdf_text: data.text, lesson_plan: null });
-      onSessionStart?.();
+      onSessionStart?.(agent.threadId);
       try {
         await agent.runAgent();
       } catch {
+        onRunFailed?.();
         setError("Could not generate a lesson plan. Please try a different PDF.");
       }
     } catch {

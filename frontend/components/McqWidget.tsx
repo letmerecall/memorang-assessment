@@ -1,18 +1,11 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
-import { useAgent, useCopilotKit } from "@copilotkit/react-core/v2";
+import { useState } from "react";
+import { useAgent, useInterrupt } from "@copilotkit/react-core/v2";
 import { LEARNING_AGENT_ID } from "@/lib/agent";
 import { mcqOptionKey } from "@/lib/keys";
 import { parseInterruptValue } from "@/lib/parseInterrupt";
 import type { MCQFeedback, MCQPayload } from "@/lib/types";
-
-const INTERRUPT_EVENT_NAME = "on_interrupt";
-
-type InterruptEvent = {
-  name: string;
-  value: unknown;
-};
 
 function parseMcqPayload(raw: unknown): MCQPayload | null {
   const payload = parseInterruptValue<MCQPayload>(raw);
@@ -131,69 +124,30 @@ function McqForm({
 }
 
 export function useMcqWidget() {
-  const { copilotkit } = useCopilotKit();
   const { agent } = useAgent({ agentId: LEARNING_AGENT_ID });
-  const [mcqPayload, setMcqPayload] = useState<MCQPayload | null>(null);
-  const pendingEventRef = useRef<InterruptEvent | null>(null);
 
-  useEffect(() => {
-    let localInterrupt: InterruptEvent | null = null;
+  return useInterrupt({
+    agentId: LEARNING_AGENT_ID,
+    renderInChat: false,
+    enabled: (event) => parseMcqPayload(event.value) !== null,
+    render: ({ event, resolve }) => {
+      const payload = parseMcqPayload(event.value);
+      if (!payload) return <></>;
 
-    const subscription = agent.subscribe({
-      onCustomEvent: ({ event }) => {
-        if (event.name === INTERRUPT_EVENT_NAME) {
-          localInterrupt = { name: event.name, value: event.value };
-        }
-      },
-      onRunFinalized: () => {
-        if (!localInterrupt) return;
-        const payload = parseMcqPayload(localInterrupt.value);
-        if (payload) {
-          pendingEventRef.current = localInterrupt;
-          setMcqPayload(payload);
-        } else {
-          pendingEventRef.current = null;
-          setMcqPayload(null);
-        }
-        localInterrupt = null;
-      },
-      onRunFailed: () => {
-        localInterrupt = null;
-      },
-    });
+      const { question, options } = payload.content;
 
-    return () => subscription.unsubscribe();
-  }, [agent]);
-
-  const resolve = useCallback(
-    (response: unknown) => {
-      copilotkit.runAgent({
-        agent,
-        forwardedProps: {
-          command: {
-            resume: response,
-            interruptEvent: pendingEventRef.current?.value,
-          },
-        },
-      });
+      return (
+        <McqForm
+          key={question}
+          question={question}
+          options={options}
+          feedback={payload.feedback}
+          tutorReply={payload.tutor_reply ?? null}
+          tutorLoading={agent.isRunning}
+          onSubmit={(index) => resolve({ kind: "answer", index })}
+          onAsk={(text) => resolve({ kind: "question", text })}
+        />
+      );
     },
-    [agent, copilotkit]
-  );
-
-  if (!mcqPayload) return null;
-
-  const { question, options } = mcqPayload.content;
-
-  return (
-    <McqForm
-      key={question}
-      question={question}
-      options={options}
-      feedback={mcqPayload.feedback}
-      tutorReply={mcqPayload.tutor_reply ?? null}
-      tutorLoading={agent.isRunning}
-      onSubmit={(index) => resolve({ kind: "answer", index })}
-      onAsk={(text) => resolve({ kind: "question", text })}
-    />
-  );
+  });
 }

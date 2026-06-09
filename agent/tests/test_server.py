@@ -1,7 +1,10 @@
 """Smoke tests for FastAPI endpoints. LLM calls are mocked."""
+import os
+from unittest.mock import AsyncMock, patch
+
 import fitz
 from fastapi.testclient import TestClient
-from agent.server import app
+from agent.server import MAX_PDF_BYTES, app
 
 
 def _pdf_bytes(text: str | None = None) -> bytes:
@@ -43,3 +46,39 @@ def test_extract_returns_422_for_blank_pdf():
         )
     assert resp.status_code == 422
     assert "no extractable text" in resp.json()["detail"].lower()
+
+
+def test_extract_returns_413_for_oversized_pdf():
+    with TestClient(app) as client:
+        resp = client.post(
+            "/extract",
+            files={
+                "file": (
+                    "big.pdf",
+                    b"x" * (MAX_PDF_BYTES + 1),
+                    "application/pdf",
+                )
+            },
+        )
+    assert resp.status_code == 413
+    assert "10 MB" in resp.json()["detail"]
+
+
+def test_lifespan_wires_postgres_checkpointer_when_database_url_set():
+    mock_pool = AsyncMock()
+    mock_checkpointer = AsyncMock()
+    with patch.dict(os.environ, {"DATABASE_URL": "postgresql://u:p@localhost/db"}, clear=False):
+        with patch("agent.server.build_graph") as mock_build, patch(
+            "psycopg_pool.AsyncConnectionPool",
+            return_value=mock_pool,
+        ), patch(
+            "langgraph.checkpoint.postgres.aio.AsyncPostgresSaver",
+            return_value=mock_checkpointer,
+        ):
+            with TestClient(app) as client:
+                resp = client.get("/health")
+    assert resp.status_code == 200
+    mock_pool.open.assert_awaited_once()
+    mock_checkpointer.setup.assert_awaited_once()
+    mock_pool.close.assert_awaited_once()
+    mock_build.assert_called_once_with(checkpointer=mock_checkpointer)

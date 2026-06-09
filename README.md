@@ -121,3 +121,25 @@ docs/spike-notes.md   # proven CopilotKit/LangGraph symbol names & versions
 | `OPENAI_MODEL` | OpenRouter model slug | `openai/gpt-4.1` |
 | `DATABASE_URL` | Postgres connection string | `postgresql://memorang:memorang@localhost:5432/memorang` |
 | `AGENT_URL` | FastAPI base URL (used by Next.js) | `http://localhost:8123` |
+
+## Known limitations
+
+These are intentional MVP trade-offs, not bugs in the HITL or grading wiring.
+
+### Session durability
+
+- Only one active lesson is tracked (`lesson_thread_id` in `localStorage`). Opening the app in multiple tabs can race on the same thread ID.
+- If "Resume lesson" fails (expired checkpoint), you must click "Start new lesson" to clear the stored thread.
+- A failed first upload mints a fresh thread ID so retries do not merge into a partial checkpoint.
+
+### Plan revision feedback
+
+"Request changes" on the lesson plan **does** route back through the agent with your feedback, but revisions are best-effort:
+
+- The prompt and schema require **3–5 objectives** (`plan_schema.py`). Requests for fewer than 3 (e.g. "give me only 2") cannot be satisfied — validation and retry logic enforce the 3–5 range.
+- Feedback is appended as a soft hint (`Previous feedback to incorporate: …`), not as a hard override of the default rules.
+- Each revision **regenerates** a plan from the PDF rather than editing the plan you just saw, so targeted edits ("drop objective 2") are unreliable.
+
+### MCQ answer position
+
+Generated MCQs often place the correct answer in **option 1 or 2**. This is common LLM positional bias: the model tends to write the correct answer first, and options are shown in generation order with no post-generation shuffle. Grading still compares against the stored `correct_index` correctly.

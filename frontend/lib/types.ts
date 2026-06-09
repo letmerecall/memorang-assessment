@@ -50,7 +50,15 @@ export type SummaryPayload = {
   content: SummaryContent;
 };
 
+export type StoredMcq = MCQContent & {
+  correct_index?: number;
+};
+
 export type AgentStateShape = {
   lesson_plan?: LessonPlanData;
   current_idx?: number;
+  current_mcq?: StoredMcq | null;
+  results?: SummaryResult[] | null;
+  asked_tutor?: boolean;
+  last_tutor_reply?: string | null;
 };

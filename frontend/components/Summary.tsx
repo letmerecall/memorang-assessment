@@ -1,6 +1,5 @@
 "use client";
 
-import { useState } from "react";
 import ReactMarkdown from "react-markdown";
 import { useInterrupt } from "@copilotkit/react-core/v2";
 import { LEARNING_AGENT_ID } from "@/lib/agent";
@@ -11,14 +10,6 @@ import type { SummaryContent, SummaryPayload } from "@/lib/types";
 function parseSummaryPayload(raw: unknown): SummaryPayload | null {
   const payload = parseInterruptValue<SummaryPayload>(raw);
   return payload?.type === "summary" ? payload : null;
-}
-
-function summaryEventKey(value: unknown): string | null {
-  const payload = parseSummaryPayload(value);
-  if (payload) {
-    return JSON.stringify(payload.content);
-  }
-  return null;
 }
 
 type SummaryCardProps = {
@@ -35,7 +26,7 @@ function SummaryCard({ content, onDone }: SummaryCardProps) {
 
       <div className="mb-4 space-y-1">
         {content.results.map((r, i) => (
-          <div key={i} className="flex items-center gap-2">
+          <div key={`${i}:${r.objective}`} className="flex items-center gap-2">
             <span
               className={r.correct_first_try ? "text-green-600" : "text-orange-500"}
               aria-label={r.correct_first_try ? "Correct" : "Incorrect"}
@@ -68,22 +59,18 @@ function SummaryCard({ content, onDone }: SummaryCardProps) {
 }
 
 export function useSummaryWidget(onDone?: () => void) {
-  const [dismissedKey, setDismissedKey] = useState<string | null>(null);
-
   return useInterrupt({
     agentId: LEARNING_AGENT_ID,
     renderInChat: false,
     enabled: (event) => parseSummaryPayload(event.value) !== null,
-    render: ({ event }) => {
-      const key = summaryEventKey(event.value);
-      if (key !== null && dismissedKey === key) return <></>;
+    render: ({ event, resolve }) => {
       const payload = parseSummaryPayload(event.value);
       if (!payload) return <></>;
       return (
         <SummaryCard
           content={payload.content}
           onDone={() => {
-            if (key !== null) setDismissedKey(key);
+            resolve({});
             onDone?.();
           }}
         />

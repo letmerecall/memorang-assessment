@@ -1,13 +1,15 @@
 """Tests for AgentState and graph components."""
+import pytest
 from unittest.mock import patch, call
 from agent.state import AgentState
 from agent.graph import ingest_plan, build_graph, approve, _parse_resume, generate_plan, route_after_approve
-from agent.plan_schema import LessonPlan, LearningObjective
+from agent.plan_schema import LessonPlan, LearningObjective, PlanGenerationError
+from agent.errors import PlanApprovalError
 from agent.nodes.grade import grade, route_mcq, route_after_grade
 from agent.nodes.ask_mcq import ask_mcq
 from agent.nodes.generate_mcq import generate_mcq
-from agent.nodes.summary import summary
-from agent.mcq_schema import MCQ
+from agent.nodes.summary import summary, _generate_tips
+from agent.mcq_schema import MCQ, MCQGenerationError
 
 
 def test_agent_state_defaults():
@@ -42,12 +44,12 @@ def test_ingest_plan_sets_lesson_plan_in_state():
     assert len(result["lesson_plan"]["objectives"]) == 3
 
 
-def test_ingest_plan_skips_when_no_pdf_text():
+def test_ingest_plan_raises_when_no_pdf_text():
     state = AgentState(messages=[], pdf_text=None, lesson_plan=None)
     with patch("agent.nodes.ingest_plan.generate_plan") as mock_gen:
-        result = ingest_plan(state)
+        with pytest.raises(PlanGenerationError, match="No PDF text"):
+            ingest_plan(state)
     mock_gen.assert_not_called()
-    assert result == {}
 
 
 def test_graph_compiles_with_memory_checkpointer():
@@ -121,6 +123,13 @@ def test_approve_empty_feedback_defaults_to_empty_string():
     assert result == {"revision_feedback": ""}
 
 
+def test_approve_invalid_decision_raises():
+    state = AgentState(messages=[], lesson_plan={"objectives": []})
+    with patch("agent.nodes.approve.interrupt", return_value={}):
+        with pytest.raises(PlanApprovalError, match="Invalid approval"):
+            approve(state)
+
+
 def test_ingest_plan_passes_feedback_to_generate_plan():
     state = AgentState(messages=[], pdf_text="some content", revision_feedback="add more detail")
     with patch("agent.nodes.ingest_plan.generate_plan") as mock_gen:
@@ -145,8 +154,8 @@ def test_ingest_plan_clears_revision_feedback():
 
 
 def test_generate_plan_includes_feedback_in_prompt():
-    with patch("agent.nodes.ingest_plan.ChatOpenAI") as MockLLM:
-        mock_instance = MockLLM.return_value.with_structured_output.return_value
+    with patch("agent.nodes.ingest_plan.make_llm") as MockLLM:
+        mock_instance = MockLLM.return_value
         mock_instance.invoke.return_value = _mock_plan()
         generate_plan("my content", feedback="add beginner objectives")
     prompt_arg = mock_instance.invoke.call_args[0][0]
@@ -154,8 +163,8 @@ def test_generate_plan_includes_feedback_in_prompt():
 
 
 def test_generate_plan_no_feedback_omits_feedback_section():
-    with patch("agent.nodes.ingest_plan.ChatOpenAI") as MockLLM:
-        mock_instance = MockLLM.return_value.with_structured_output.return_value
+    with patch("agent.nodes.ingest_plan.make_llm") as MockLLM:
+        mock_instance = MockLLM.return_value
         mock_instance.invoke.return_value = _mock_plan()
         generate_plan("my content", feedback=None)
     prompt_arg = mock_instance.invoke.call_args[0][0]
@@ -431,15 +440,16 @@ def test_generate_mcq_resets_attempts_and_clears_last_grade():
         attempts=3,
         last_grade={"correct": False, "hint": "old hint"},
     )
-    with patch("agent.nodes.generate_mcq.ChatOpenAI") as MockLLM:
-        mock_instance = MockLLM.return_value.with_structured_output.return_value
+    with patch("agent.nodes.generate_mcq.make_llm") as MockLLM:
+        mock_instance = MockLLM.return_value
         mock_instance.invoke.return_value = _mock_mcq_model()
         result = generate_mcq(state)
     assert result["attempts"] == 0
     assert result["last_grade"] is None
     assert result["current_mcq"]["question"] == "Q?"
-    assert result["current_mcq"]["options"] == ["A", "B", "C", "D"]
-    assert result["current_mcq"]["correct_index"] == 1
+    # Verify the shuffle invariant: correct_index points to the correct answer text ("B")
+    mcq = result["current_mcq"]
+    assert mcq["options"][mcq["correct_index"]] == "B"
 
 
 def test_generate_mcq_includes_objective_and_pdf_in_prompt():
@@ -455,13 +465,77 @@ def test_generate_mcq_includes_objective_and_pdf_in_prompt():
         attempts=0,
         last_grade=None,
     )
-    with patch("agent.nodes.generate_mcq.ChatOpenAI") as MockLLM:
-        mock_instance = MockLLM.return_value.with_structured_output.return_value
+    with patch("agent.nodes.generate_mcq.make_llm") as MockLLM:
+        mock_instance = MockLLM.return_value
         mock_instance.invoke.return_value = _mock_mcq_model()
         generate_mcq(state)
     prompt = mock_instance.invoke.call_args[0][0]
     assert "Topic A" in prompt
     assert "the content" in prompt
+
+
+def test_generate_mcq_raises_when_index_out_of_range():
+    state = AgentState(
+        messages=[],
+        pdf_text="content",
+        lesson_plan={
+            "objectives": [
+                {"title": "Only", "description": "One.", "difficulty": "beginner"}
+            ]
+        },
+        current_idx=3,
+    )
+    with pytest.raises(MCQGenerationError, match="out of range"):
+        generate_mcq(state)
+
+
+def test_generate_mcq_shuffles_options():
+    """After shuffle, correct_index must point to the original correct answer text."""
+    state = AgentState(
+        messages=[],
+        pdf_text="content",
+        lesson_plan={
+            "objectives": [
+                {"title": "Topic", "description": "Desc.", "difficulty": "beginner"}
+            ]
+        },
+        current_idx=0,
+    )
+    with patch("agent.nodes.generate_mcq.make_llm") as MockLLM:
+        mock_instance = MockLLM.return_value
+        mock_instance.invoke.return_value = _mock_mcq_model()
+        result = generate_mcq(state)
+
+    mcq = result["current_mcq"]
+    correct_text = "B"
+    assert mcq["options"][mcq["correct_index"]] == correct_text
+    assert mcq["options"] != ["A", "B", "C", "D"]
+
+
+def test_generate_mcq_shuffle_is_deterministic_per_question():
+    """Same question text → same shuffle (seeded by question text for reproducibility)."""
+    state = AgentState(
+        messages=[],
+        pdf_text="content",
+        lesson_plan={
+            "objectives": [
+                {"title": "Topic", "description": "Desc.", "difficulty": "beginner"}
+            ]
+        },
+        current_idx=0,
+    )
+    with patch("agent.nodes.generate_mcq.make_llm") as MockLLM:
+        mock_instance = MockLLM.return_value
+        mock_instance.invoke.return_value = _mock_mcq_model()
+        result1 = generate_mcq(state)
+
+    with patch("agent.nodes.generate_mcq.make_llm") as MockLLM:
+        mock_instance = MockLLM.return_value
+        mock_instance.invoke.return_value = _mock_mcq_model()
+        result2 = generate_mcq(state)
+
+    assert result1["current_mcq"]["options"] == result2["current_mcq"]["options"]
+    assert result1["current_mcq"]["correct_index"] == result2["current_mcq"]["correct_index"]
 
 
 # ── summary ────────────────────────────────────────────────────────────
@@ -491,7 +565,7 @@ def test_summary_computes_correct_score():
         lesson_plan={"objectives": []},
     )
     with patch("agent.nodes.summary.interrupt") as mock_interrupt, \
-         patch("agent.nodes.summary.ChatOpenAI") as MockLLM:
+         patch("agent.nodes.summary.make_llm") as MockLLM:
         mock_instance = MockLLM.return_value
         mock_instance.invoke.return_value.content = "Study Topic 2."
         summary(state)
@@ -509,7 +583,7 @@ def test_summary_tips_prompt_includes_weak_objective():
         lesson_plan={"objectives": []},
     )
     with patch("agent.nodes.summary.interrupt"), \
-         patch("agent.nodes.summary.ChatOpenAI") as MockLLM:
+         patch("agent.nodes.summary.make_llm") as MockLLM:
         mock_instance = MockLLM.return_value
         mock_instance.invoke.return_value.content = "Review Topic 1."
         summary(state)
@@ -528,7 +602,7 @@ def test_summary_skips_llm_when_all_correct_first_try():
         lesson_plan={"objectives": []},
     )
     with patch("agent.nodes.summary.interrupt") as mock_interrupt, \
-         patch("agent.nodes.summary.ChatOpenAI") as MockLLM:
+         patch("agent.nodes.summary.make_llm") as MockLLM:
         summary(state)
     MockLLM.assert_not_called()
     payload = mock_interrupt.call_args[0][0]
@@ -545,7 +619,7 @@ def test_summary_results_passed_through_in_payload():
         lesson_plan={"objectives": []},
     )
     with patch("agent.nodes.summary.interrupt") as mock_interrupt, \
-         patch("agent.nodes.summary.ChatOpenAI") as MockLLM:
+         patch("agent.nodes.summary.make_llm") as MockLLM:
         mock_instance = MockLLM.return_value
         mock_instance.invoke.return_value.content = "Tips."
         summary(state)
@@ -561,11 +635,40 @@ def test_summary_empty_results_returns_zero_score():
         lesson_plan={"objectives": []},
     )
     with patch("agent.nodes.summary.interrupt") as mock_interrupt, \
-         patch("agent.nodes.summary.ChatOpenAI") as MockLLM:
+         patch("agent.nodes.summary.make_llm") as MockLLM:
         summary(state)
     MockLLM.assert_not_called()
     payload = mock_interrupt.call_args[0][0]
     assert payload["content"]["score"] == 0.0
+
+
+def test_summary_tips_includes_asked_tutor_objective():
+    results = [{
+        "objective": "Topic A",
+        "correct_first_try": True,
+        "attempts": 1,
+        "asked_tutor": True,
+    }]
+    with patch("agent.nodes.summary.interrupt"), \
+         patch("agent.nodes.summary.make_llm") as MockLLM:
+        mock_instance = MockLLM.return_value
+        mock_instance.invoke.return_value.content = "Review Topic A."
+        summary(AgentState(messages=[], results=results, pdf_text="content"))
+    prompt = mock_instance.invoke.call_args[0][0]
+    assert "Topic A" in prompt
+
+
+def test_generate_tips_retries_with_error_context():
+    with patch("agent.nodes.summary.make_llm") as MockLLM:
+        mock_instance = MockLLM.return_value
+        mock_instance.invoke.side_effect = [
+            RuntimeError("bad format"),
+            type("R", (), {"content": "Better tips."})(),
+        ]
+        tips = _generate_tips(["Weak topic"], "source text")
+    assert tips == "Better tips."
+    retry_prompt = mock_instance.invoke.call_args_list[1][0][0]
+    assert "bad format" in retry_prompt
 
 
 # ── tutor ─────────────────────────────────────────────────────────────────
@@ -592,7 +695,7 @@ def _tutor_state(**kwargs) -> AgentState:
 
 def test_tutor_prompt_excludes_correct_option_text():
     from agent.nodes.tutor import tutor
-    with patch("agent.nodes.tutor.ChatOpenAI") as MockLLM:
+    with patch("agent.nodes.tutor.make_llm") as MockLLM:
         MockLLM.return_value.invoke.return_value.content = "Here is a hint."
         tutor(_tutor_state())
     prompt = MockLLM.return_value.invoke.call_args[0][0]
@@ -601,7 +704,7 @@ def test_tutor_prompt_excludes_correct_option_text():
 
 def test_tutor_prompt_excludes_explanation():
     from agent.nodes.tutor import tutor
-    with patch("agent.nodes.tutor.ChatOpenAI") as MockLLM:
+    with patch("agent.nodes.tutor.make_llm") as MockLLM:
         MockLLM.return_value.invoke.return_value.content = "Here is a hint."
         tutor(_tutor_state())
     prompt = MockLLM.return_value.invoke.call_args[0][0]
@@ -610,7 +713,7 @@ def test_tutor_prompt_excludes_explanation():
 
 def test_tutor_prompt_excludes_correct_index_value():
     from agent.nodes.tutor import tutor
-    with patch("agent.nodes.tutor.ChatOpenAI") as MockLLM:
+    with patch("agent.nodes.tutor.make_llm") as MockLLM:
         MockLLM.return_value.invoke.return_value.content = "Here is a hint."
         tutor(_tutor_state())
     prompt = MockLLM.return_value.invoke.call_args[0][0]
@@ -619,7 +722,7 @@ def test_tutor_prompt_excludes_correct_index_value():
 
 def test_tutor_prompt_includes_question_pdf_and_user_question():
     from agent.nodes.tutor import tutor
-    with patch("agent.nodes.tutor.ChatOpenAI") as MockLLM:
+    with patch("agent.nodes.tutor.make_llm") as MockLLM:
         MockLLM.return_value.invoke.return_value.content = "Here is a hint."
         tutor(_tutor_state())
     prompt = MockLLM.return_value.invoke.call_args[0][0]
@@ -630,7 +733,7 @@ def test_tutor_prompt_includes_question_pdf_and_user_question():
 
 def test_tutor_sets_asked_tutor_true():
     from agent.nodes.tutor import tutor
-    with patch("agent.nodes.tutor.ChatOpenAI") as MockLLM:
+    with patch("agent.nodes.tutor.make_llm") as MockLLM:
         MockLLM.return_value.invoke.return_value.content = "Here is a hint."
         result = tutor(_tutor_state())
     assert result.get("asked_tutor") is True
@@ -640,7 +743,7 @@ def test_tutor_sets_asked_tutor_true():
 def test_tutor_adds_ai_message_to_messages():
     from agent.nodes.tutor import tutor
     from langchain_core.messages import AIMessage
-    with patch("agent.nodes.tutor.ChatOpenAI") as MockLLM:
+    with patch("agent.nodes.tutor.make_llm") as MockLLM:
         MockLLM.return_value.invoke.return_value.content = "Study the chloroplast."
         result = tutor(_tutor_state())
     assert len(result["messages"]) == 1
@@ -696,8 +799,8 @@ def test_generate_mcq_resets_asked_tutor():
         asked_tutor=True,
         last_tutor_reply="Old hint.",
     )
-    with patch("agent.nodes.generate_mcq.ChatOpenAI") as MockLLM:
-        mock_instance = MockLLM.return_value.with_structured_output.return_value
+    with patch("agent.nodes.generate_mcq.make_llm") as MockLLM:
+        mock_instance = MockLLM.return_value
         mock_instance.invoke.return_value = _mock_mcq_model()
         result = generate_mcq(state)
     assert result["asked_tutor"] is False
@@ -714,7 +817,7 @@ def test_graph_has_tutor_node():
 
 def test_tutor_prompt_contains_refusal_instruction():
     from agent.nodes.tutor import tutor
-    with patch("agent.nodes.tutor.ChatOpenAI") as MockLLM:
+    with patch("agent.nodes.tutor.make_llm") as MockLLM:
         MockLLM.return_value.invoke.return_value.content = "Here is a hint."
         tutor(_tutor_state())
     prompt = MockLLM.return_value.invoke.call_args[0][0]

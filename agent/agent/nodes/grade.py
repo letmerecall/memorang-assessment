@@ -1,10 +1,14 @@
+from agent.errors import GradeError
 from agent.mcq_schema import MCQResult
 from agent.state import AgentState
 
 
 def grade(state: AgentState) -> dict:
     attempts = state.get("attempts", 0) + 1
-    mcq = state["current_mcq"]
+    mcq = state.get("current_mcq")
+    if not mcq:
+        raise GradeError("No current MCQ in state")
+
     selected = (state.get("last_answer") or {}).get("index")
 
     if selected == mcq["correct_index"]:

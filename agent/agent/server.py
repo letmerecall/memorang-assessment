@@ -16,6 +16,8 @@ from ag_ui_langgraph import add_langgraph_fastapi_endpoint
 from agent.graph import build_graph
 from agent.pdf import extract_text, trim_to_budget, NoExtractableTextError
 
+MAX_PDF_BYTES = 10 * 1024 * 1024
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -65,6 +67,8 @@ async def health():
 @app.post("/extract")
 async def extract(file: UploadFile = File(...)):
     file_bytes = await file.read()
+    if len(file_bytes) > MAX_PDF_BYTES:
+        raise HTTPException(status_code=413, detail="PDF exceeds 10 MB limit.")
     try:
         text = extract_text(file_bytes)
     except NoExtractableTextError as e:
