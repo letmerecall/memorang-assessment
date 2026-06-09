@@ -60,6 +60,35 @@ export default function HomePage() {
 
   const summaryWidget = useSummaryWidget(resetSession);
 
+  useEffect(() => {
+    if (!resuming) return;
+    const sub = agent.subscribe({
+      onRunErrorEvent: () => {
+        setResumeError(
+          "Could not resume — the session may have expired. Start a new lesson.",
+        );
+        setResuming(false);
+      },
+      onRunFinishedEvent: () => {
+        setResuming(false);
+      },
+    });
+    return () => sub.unsubscribe();
+  }, [agent, resuming]);
+
+  function handleResume() {
+    setResumeError(null);
+    setResuming(true);
+    // Fire and forget — lifecycle handled by the subscription effect above.
+    // Catch only in case CopilotKit rejects the Promise (rare).
+    agent.runAgent().catch(() => {
+      setResumeError(
+        "Could not resume — the session may have expired. Start a new lesson.",
+      );
+      setResuming(false);
+    });
+  }
+
   const phase = derivePhase({
     awaitingUpload,
     hasPlan: plan !== null,
@@ -81,18 +110,6 @@ export default function HomePage() {
     isRunning: agent.isRunning,
     awaitingUpload,
   });
-
-  async function handleResume() {
-    setResumeError(null);
-    setResuming(true);
-    try {
-      await agent.runAgent();
-    } catch {
-      setResumeError("Could not resume — the session may have expired. Start a new lesson.");
-    } finally {
-      setResuming(false);
-    }
-  }
 
   return (
     <div className="flex min-h-screen bg-gray-50">
