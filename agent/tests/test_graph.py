@@ -509,6 +509,7 @@ def test_generate_mcq_shuffles_options():
     mcq = result["current_mcq"]
     correct_text = "B"
     assert mcq["options"][mcq["correct_index"]] == correct_text
+    assert mcq["options"] != ["A", "B", "C", "D"]
 
 
 def test_generate_mcq_shuffle_is_deterministic_per_question():

@@ -1,4 +1,4 @@
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
 class MCQ(BaseModel):
@@ -8,6 +8,13 @@ class MCQ(BaseModel):
     explanation: str
     hint: str
     source_quote: str
+
+    @field_validator("options")
+    @classmethod
+    def options_must_be_unique(cls, v: list[str]) -> list[str]:
+        if len(v) != len(set(v)):
+            raise ValueError("MCQ options must be unique")
+        return v
 
 
 class MCQResult(BaseModel):
