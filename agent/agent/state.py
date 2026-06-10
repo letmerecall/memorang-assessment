@@ -8,6 +8,7 @@ class AgentState(CopilotKitState):
     revision_feedback: Optional[str] = None
     current_idx: int = 0
     current_mcq: Optional[dict] = None
+    mcq_key: Optional[dict] = None
     attempts: int = 0
     results: Optional[list[dict]] = None
     last_answer: Optional[dict] = None

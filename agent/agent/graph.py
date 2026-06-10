@@ -33,13 +33,13 @@ def build_graph(checkpointer: Any = None):
     builder.add_conditional_edges(
         "ask_mcq",
         route_mcq,
-        {"grade": "grade", "tutor": "tutor"},
+        {"grade": "grade", "tutor": "tutor", "generate_mcq": "generate_mcq", "summary": "summary"},
     )
     builder.add_edge("tutor", "ask_mcq")
     builder.add_conditional_edges(
         "grade",
         route_after_grade,
-        {"generate_mcq": "generate_mcq", "summary": "summary", "ask_mcq": "ask_mcq"},
+        {"ask_mcq": "ask_mcq"},
     )
     builder.add_edge("summary", END)
     return builder.compile(checkpointer=checkpointer)

@@ -91,9 +91,7 @@ of standout touches that show depth, not breadth.
   scoring + no-penalty retry; `route_mcq` classification; Pydantic schema accept/reject;
   `pdf.py` extract/trim/empty-error). **Mock all LLM calls; assert on boundaries, never on
   generated content.** Plus a cheap **tutor-guardrail prompt test** (assert assembled prompt
-  excludes `correct_index`/correct option text/explanation). **One live smoke test gated behind
-  `RUN_LIVE_LLM=1`** (off by default). **No automated frontend tests for MVP** — rely on manual
-  E2E (= Loom script); documented as a deliberate scope choice. (Stretch: one `McqWidget`
+  excludes option text/explanation). E2E verification is manual (Loom script). (Stretch: one `McqWidget`
   green/red render test, last.)
 - **#13 UI surface** — interrupt widgets render **inside a CopilotKit chat thread** (idiomatic
   CoAgents; interrupt plumbing + streaming for free), **left `ProgressSidebar`**, upload as the
@@ -297,7 +295,7 @@ chat-during-mcq → `tutor → ask_mcq`. Compiled with `checkpointer=PostgresSav
 - Schema parsing: plan + MCQ pydantic models validate/reject malformed LLM output.
 - Routing: chat-during-mcq routes to `tutor`, submit routes to `grade`.
 - PDF: `pdf.py` extracts non-empty text from `sample.pdf`.
-- LLM calls mocked; one optional live smoke test gated behind an env flag.
+- LLM calls mocked; E2E verified manually via Loom walkthrough.
 
 **End-to-end (manual, also the Loom script):**
 1. `docker compose up -d` (Postgres), `cd agent && uvicorn agent.server:app`,
@@ -333,8 +331,8 @@ hint + penalty-free retry → step 4; proceed through all MCQs → quiz loop; su
   prompt/schema hard-require 3–5 objectives, feedback is a soft append-only hint, and each
   revision regenerates from the PDF rather than editing the rejected plan. Requests like
   "only 2 objectives" cannot be honored.
-- **MCQ correct-answer position bias** — LLMs often put the answer in option 1 or 2; options
-  are not shuffled after generation. Future work: post-generation shuffle or prompt constraint.
+- **MCQ option order** — options are shuffled server-side after generation (`generate_mcq._shuffle_mcq`);
+  the answer key lives in `mcq_key` and is not sent to the client interrupt payload.
 
 ## Risks / mitigations
 - *CopilotKit API churn* → pin versions, follow installed-version docs (flagged above).

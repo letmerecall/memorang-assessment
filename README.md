@@ -22,44 +22,63 @@ The frontend never talks to FastAPI directly — all agent traffic proxies throu
 | Tool | Version |
 |------|---------|
 | Docker + Docker Compose | any recent |
-| Python | ≥ 3.12 |
-| [uv](https://docs.astral.sh/uv/) | any recent |
-| Node.js | ≥ 18 |
-| npm | ≥ 9 |
+| OpenRouter API key | [openrouter.ai/keys](https://openrouter.ai/keys) |
 
-## Setup
+For local development without Docker you also need Python ≥ 3.12, [uv](https://docs.astral.sh/uv/), Node.js ≥ 18, and npm ≥ 9.
 
-### 1. Clone & configure environment
+## Quick start (Docker — recommended)
 
 ```bash
 git clone <repo-url>
 cd memorang-assessment
 cp .env.example .env
+# Edit .env and set OPENAI_API_KEY
+docker compose up --build
 ```
 
-Edit `.env` and fill in your OpenRouter API key (`OPENAI_API_KEY`). The other defaults work as-is with the included `docker-compose.yml`.
+Open **http://localhost:3000** and upload [`sample.pdf`](sample.pdf) for a quick end-to-end demo.
+
+Services:
+
+| Service | URL |
+|---------|-----|
+| Frontend | http://localhost:3000 |
+| Agent API | http://localhost:8123/health |
+| Postgres | `localhost:5432` |
+
+Stop with `docker compose down`. Add `-v` to also remove the Postgres volume.
+
+## Local development (optional)
+
+Use this if you prefer running the agent and frontend on the host while keeping Postgres in Docker.
+
+### 1. Configure environment
+
+```bash
+cp .env.example .env
+```
+
+Edit `.env` and set `OPENAI_API_KEY`. For host-based dev, also set:
+
+```
+DATABASE_URL=postgresql://memorang:memorang@localhost:5432/memorang
+AGENT_URL=http://localhost:8123
+```
 
 ### 2. Start Postgres
 
 ```bash
-docker compose up -d
+docker compose up -d postgres
 ```
 
-### 3. Install Python dependencies
+### 3. Install dependencies
 
 ```bash
-cd agent
-uv sync
+cd agent && uv sync
+cd ../frontend && npm install
 ```
 
-### 4. Install frontend dependencies
-
-```bash
-cd frontend
-npm install
-```
-
-## Running
+### 4. Run services
 
 Open **two terminals** from the repo root.
 
@@ -88,6 +107,11 @@ cd agent
 uv run pytest tests/ -v
 ```
 
+```bash
+cd frontend
+npm test
+```
+
 ## Project structure
 
 ```
@@ -107,7 +131,9 @@ frontend/
   components/         # interrupt widgets, UI components
   package.json        # pinned JS dependencies
 
-docker-compose.yml    # postgres:16
+docker-compose.yml    # postgres + agent + frontend (one-command setup)
+agent/Dockerfile
+frontend/Dockerfile
 .env.example          # required environment variables
 docs/spike-notes.md   # proven CopilotKit/LangGraph symbol names & versions
 ```
@@ -119,8 +145,13 @@ docs/spike-notes.md   # proven CopilotKit/LangGraph symbol names & versions
 | `OPENAI_API_KEY` | OpenRouter API key | — (required) |
 | `OPENAI_BASE_URL` | LLM API base URL | `https://openrouter.ai/api/v1` |
 | `OPENAI_MODEL` | OpenRouter model slug | `openai/gpt-4.1` |
-| `DATABASE_URL` | Postgres connection string | `postgresql://memorang:memorang@localhost:5432/memorang` |
-| `AGENT_URL` | FastAPI base URL (used by Next.js) | `http://localhost:8123` |
+| `DATABASE_URL` | Postgres connection string (local dev only) | `postgresql://memorang:memorang@localhost:5432/memorang` |
+| `AGENT_URL` | FastAPI base URL for Next.js (local dev only) | `http://localhost:8123` |
+
+With Docker Compose, `DATABASE_URL` and `AGENT_URL` are set automatically for inter-container networking.
+| `NEXT_PUBLIC_COPILOTKIT_PUBLIC_LICENSE_KEY` | CopilotKit license (optional) | — |
+
+Copy [`.env.example`](.env.example) to `.env` at the **repo root** before starting the agent. The frontend works with defaults; set `AGENT_URL` in `frontend/.env.local` only if the agent is not on `localhost:8123`.
 
 ## Known limitations
 
@@ -130,7 +161,7 @@ These are intentional MVP trade-offs, not bugs in the HITL or grading wiring.
 
 - Only one active lesson is tracked (`lesson_thread_id` in `localStorage`). Opening the app in multiple tabs can race on the same thread ID.
 - If "Resume lesson" fails (expired checkpoint), you must click "Start new lesson" to clear the stored thread.
-- A failed first upload mints a fresh thread ID so retries do not merge into a partial checkpoint.
+- Retries after a failed plan generation reuse the same thread ID; click "Start new lesson" to mint a fresh thread.
 
 ### Plan revision feedback
 
@@ -140,6 +171,6 @@ These are intentional MVP trade-offs, not bugs in the HITL or grading wiring.
 - Feedback is appended as a soft hint (`Previous feedback to incorporate: …`), not as a hard override of the default rules.
 - Each revision **regenerates** a plan from the PDF rather than editing the plan you just saw, so targeted edits ("drop objective 2") are unreliable.
 
-### MCQ answer position
+### MCQ option order
 
-Generated MCQs often place the correct answer in **option 1 or 2**. This is common LLM positional bias: the model tends to write the correct answer first, and options are shown in generation order with no post-generation shuffle. Grading still compares against the stored `correct_index` correctly.
+Options are **shuffled server-side** after generation (seeded by question text) to reduce LLM positional bias. The answer key stays server-side in `mcq_key` and is not sent to the client interrupt payload.
