@@ -101,6 +101,7 @@ def test_state_endpoint_returns_public_state_only():
                     "mcq_key": {"correct_index": 2},
                     "mcq_queue": [{"mcq_key": {"correct_index": 0}}],
                 },
+                as_node="ask_mcq",
             )
         )
         resp = client.get("/state/state-test-thread")

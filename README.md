@@ -9,13 +9,82 @@ PDF → plan → HITL approval → MCQ loop (with hints & tutor) → summary
 
 ## Architecture
 
-```
-Next.js (CopilotKit UI)
-  └── /api/copilotkit  ──►  FastAPI (LangGraph agent)
-                                 └── PostgresSaver  ──►  Postgres
+```mermaid
+flowchart TB
+  subgraph frontend["Next.js (CopilotKit UI)"]
+    Upload["PdfUpload"]
+    Plan["LessonPlanApproval"]
+    MCQ["McqWidget"]
+    Sidebar["ProgressSidebar"]
+    SummaryUI["Summary"]
+    Proxy["/api/copilotkit"]
+    ExtractAPI["/api/extract"]
+    StateAPI["/api/state/{threadId}"]
+  end
+
+  subgraph agent["FastAPI (LangGraph agent)"]
+    Extract["POST /extract"]
+    Graph["LangGraph AG-UI /"]
+    State["GET /state/{thread_id}"]
+  end
+
+  DB[("Postgres\n(PostgresSaver)")]
+
+  Upload --> ExtractAPI --> Extract
+  Upload --> Proxy --> Graph
+  Sidebar --> Proxy
+  StateAPI --> State
+  Graph --> DB
+  State --> DB
+  Graph -. interrupt() .-> Plan
+  Graph -. interrupt() .-> MCQ
+  Graph -. interrupt() .-> SummaryUI
 ```
 
-The frontend never talks to FastAPI directly — all agent traffic proxies through `/api/copilotkit`.
+The browser never calls FastAPI directly. The Next.js server proxies three routes to the agent: `/api/copilotkit` (LangGraph runs), `/api/extract` (PDF text extraction), and `/api/state/{threadId}` (public checkpoint state for resume).
+
+## How the agent works
+
+1. **Upload** — The user uploads a PDF. The frontend calls `/api/extract` (proxied to FastAPI), seeds `pdf_text` into checkpointed `AgentState`, and starts a LangGraph run with a fresh `thread_id`.
+2. **Plan** — `ingest_plan` calls `OPENAI_MODEL` (default `openai/gpt-4.1`) with structured output to produce 3–5 learning objectives (title, description, difficulty).
+3. **HITL approval** — `approve` calls `interrupt()` and renders the plan in the UI. The user clicks **Approve** or **Request changes**; revisions loop back through `ingest_plan`.
+4. **MCQ pre-batch** — After approval, `prebatch_mcqs` generates one MCQ per objective using `OPENAI_MCQ_MODEL` (default `openai/gpt-4o-mini`), grounded in the PDF. Options are shuffled server-side; answer keys stay in `mcq_key` (never sent to the client).
+5. **Quiz loop** — For each objective: `generate_mcq` (dequeues pre-generated MCQ) → `ask_mcq` (interrupt with radio choices) → user submits or asks the tutor → `grade` (deterministic — no LLM) or `tutor` (`OPENAI_MODEL`) → retry or advance. Correct answers show green + explanation; incorrect answers show red + hint with unlimited penalty-free retries.
+6. **Summary** — When all objectives are done, `summary` computes the score (first-attempt correct / total), calls `OPENAI_MODEL` for personalized study tips, and renders via `interrupt()`.
+
+LangGraph node flow (`approve`, `ask_mcq`, and `summary` call `interrupt()` and pause for user input):
+
+```mermaid
+flowchart TB
+  ingest_plan --> approve
+  approve -->|request changes| ingest_plan
+  approve -->|approve| prebatch_mcqs
+  prebatch_mcqs --> generate_mcq --> ask_mcq
+
+  ask_mcq -->|submit answer| grade
+  ask_mcq -->|ask tutor| tutor
+  tutor --> ask_mcq
+  grade --> ask_mcq
+
+  ask_mcq -->|continue, more objectives| generate_mcq
+  ask_mcq -->|continue, all done| summary
+```
+
+After a wrong answer, `grade` loops back to `ask_mcq` with the hint shown (penalty-free retry). After a correct answer, the user clicks **Continue** to advance to the next objective or the summary screen.
+
+### LLM usage
+
+| Step | Node | Model env var | Default | Notes |
+|------|------|---------------|---------|-------|
+| Lesson plan | `ingest_plan` | `OPENAI_MODEL` | `openai/gpt-4.1` | Structured output (Pydantic) |
+| MCQ generation | `prebatch_mcqs` | `OPENAI_MCQ_MODEL` | `openai/gpt-4o-mini` | One MCQ per objective, parallelized |
+| Tutor hints | `tutor` | `OPENAI_MODEL` | `openai/gpt-4.1` | Never receives `mcq_key` / correct answer |
+| Study tips | `summary` | `OPENAI_MODEL` | `openai/gpt-4.1` | Based on weak objectives |
+| Grading | `grade` | — | — | Deterministic index comparison, no LLM |
+
+All models route through OpenRouter (`OPENAI_BASE_URL`, default `https://openrouter.ai/api/v1`).
+
+LangGraph checkpoints every step to Postgres, so a lesson survives server restarts and can resume from the last interrupt.
 
 ## Prerequisites
 
@@ -29,11 +98,12 @@ For local development without Docker you also need Python ≥ 3.12, [uv](https:/
 ## Quick start (Docker — recommended)
 
 ```bash
-git clone <repo-url>
+git clone https://github.com/letmerecall/memorang-assessment.git
 cd memorang-assessment
 cp .env.example .env
 # Edit .env and set OPENAI_API_KEY
-docker compose up --build
+make dev
+# or: docker compose up --build
 ```
 
 Open **http://localhost:3000** and upload [`sample.pdf`](sample.pdf) for a quick end-to-end demo.
@@ -46,7 +116,7 @@ Services:
 | Agent API | http://localhost:8123/health |
 | Postgres | `localhost:5432` |
 
-Stop with `docker compose down`. Add `-v` to also remove the Postgres volume.
+Stop with `make down` or `docker compose down`. Add `-v` to also remove the Postgres volume.
 
 ## Local development (optional)
 
@@ -58,11 +128,16 @@ Use this if you prefer running the agent and frontend on the host while keeping 
 cp .env.example .env
 ```
 
-Edit `.env` and set `OPENAI_API_KEY`. For host-based dev, also set:
+Edit `.env` at the **repo root** and set `OPENAI_API_KEY`. The agent reads this file automatically. Also set:
 
 ```
 DATABASE_URL=postgresql://memorang:memorang@localhost:5432/memorang
-AGENT_URL=http://localhost:8123
+```
+
+The frontend proxies to `http://localhost:8123` by default — no extra frontend env file is needed for this layout. If the agent runs elsewhere, create `frontend/.env.local`:
+
+```
+AGENT_URL=http://your-agent-host:8123
 ```
 
 ### 2. Start Postgres
@@ -74,7 +149,7 @@ docker compose up -d postgres
 ### 3. Install dependencies
 
 ```bash
-cd agent && uv sync
+cd agent && uv sync --extra test
 cd ../frontend && npm install
 ```
 
@@ -103,14 +178,30 @@ The UI is available at `http://localhost:3000`.
 ## Running tests
 
 ```bash
-cd agent
-uv run pytest tests/ -v
+make test
 ```
 
+Or individually:
+
 ```bash
-cd frontend
-npm test
+cd agent && uv run pytest tests/ -v
+cd frontend && npm test
 ```
+
+All agent tests use mocked LLM calls — no API key required. End-to-end behavior is verified manually (see Loom script below).
+
+## Loom walkthrough script (< 5 min)
+
+Use this script when recording the submission demo:
+
+1. `make dev` (or `docker compose up --build`) — wait for all services healthy.
+2. Open **http://localhost:3000**, upload [`sample.pdf`](sample.pdf).
+3. Review the generated lesson plan → click **Approve**.
+4. Submit a **wrong** MCQ answer → confirm red highlight + hint, retry allowed.
+5. In the MCQ widget, type a question in **Ask your tutor…** and click **Ask** → tutor responds without revealing the answer, steers back to the question.
+6. Submit the **correct** answer → green highlight + explanation → advances to next objective.
+7. Complete all objectives → summary with score and study tips.
+8. **Durability demo**: restart the agent container mid-lesson (`docker compose restart agent`), click **Resume lesson** → same `thread_id`, state restored from Postgres.
 
 ## Project structure
 
@@ -126,12 +217,15 @@ agent/
 frontend/
   app/
     api/copilotkit/   # CopilotRuntime → FastAPI proxy
+    api/extract/      # PDF upload → agent /extract
+    api/state/        # Resume → agent /state/{thread_id}
     layout.tsx        # CopilotKit provider
     page.tsx          # main page
   components/         # interrupt widgets, UI components
   package.json        # pinned JS dependencies
 
 docker-compose.yml    # postgres + agent + frontend (one-command setup)
+Makefile              # make dev / make test convenience targets
 agent/Dockerfile
 frontend/Dockerfile
 .env.example          # required environment variables
@@ -140,22 +234,45 @@ docs/spike-notes.md   # proven CopilotKit/LangGraph symbol names & versions
 
 ## Environment variables
 
+Copy [`.env.example`](.env.example) to `.env` at the **repo root** before starting the agent.
+
+### Agent (Python)
+
+Read from repo-root `.env` (or the environment). With Docker Compose, `DATABASE_URL` is set automatically for inter-container networking.
+
 | Variable | Description | Default |
 |----------|-------------|---------|
 | `OPENAI_API_KEY` | OpenRouter API key | — (required) |
 | `OPENAI_BASE_URL` | LLM API base URL | `https://openrouter.ai/api/v1` |
-| `OPENAI_MODEL` | OpenRouter model slug | `openai/gpt-4.1` |
-| `DATABASE_URL` | Postgres connection string (local dev only) | `postgresql://memorang:memorang@localhost:5432/memorang` |
-| `AGENT_URL` | FastAPI base URL for Next.js (local dev only) | `http://localhost:8123` |
+| `OPENAI_MODEL` | Model for plan, tutor, and summary | `openai/gpt-4.1` |
+| `OPENAI_MCQ_MODEL` | Model for MCQ generation (`prebatch_mcqs`) | `openai/gpt-4o-mini` |
+| `DATABASE_URL` | Postgres connection string | `postgresql://memorang:memorang@localhost:5432/memorang` (host dev); set by Compose in Docker |
 
-With Docker Compose, `DATABASE_URL` and `AGENT_URL` are set automatically for inter-container networking.
+### Frontend (Next.js)
+
+Read from `frontend/.env.local` if present. Defaults work when the agent is on `localhost:8123`.
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `AGENT_URL` | FastAPI base URL (used by `/api/copilotkit`, `/api/extract`, `/api/state`) | `http://localhost:8123` |
 | `NEXT_PUBLIC_COPILOTKIT_PUBLIC_LICENSE_KEY` | CopilotKit license (optional) | — |
 
-Copy [`.env.example`](.env.example) to `.env` at the **repo root** before starting the agent. The frontend works with defaults; set `AGENT_URL` in `frontend/.env.local` only if the agent is not on `localhost:8123`.
+With Docker Compose, the frontend service receives `AGENT_URL=http://agent:8123` automatically.
 
 ## Known limitations
 
 These are intentional MVP trade-offs, not bugs in the HITL or grading wiring.
+
+### PDF processing
+
+- **Upload limit** — PDFs over **10 MB** are rejected (`MAX_PDF_BYTES` in agent and frontend).
+- **Large PDFs are truncated** to an ~80k-character budget (`trim_to_budget` in `pdf.py`). Future work: chunked planning or RAG over the full document.
+- **No OCR** — scanned/image-only PDFs with no embedded text are rejected with a friendly error.
+
+### Scope
+
+- **One MCQ per objective** in the MVP (state is list-shaped to allow N later).
+- **Single-document, single-user** lesson at a time (no multi-doc library or accounts).
 
 ### Session durability
 
