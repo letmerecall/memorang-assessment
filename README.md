@@ -9,13 +9,48 @@ PDF → plan → HITL approval → MCQ loop (with hints & tutor) → summary
 
 ## Architecture
 
-```
-Next.js (CopilotKit UI)
-  └── /api/copilotkit  ──►  FastAPI (LangGraph agent)
-                                 └── PostgresSaver  ──►  Postgres
+```mermaid
+flowchart TB
+  subgraph frontend["Next.js (CopilotKit UI)"]
+    Upload["PdfUpload"]
+    Plan["LessonPlanApproval"]
+    MCQ["McqWidget"]
+    Sidebar["ProgressSidebar"]
+    Summary["Summary"]
+    Proxy["/api/copilotkit"]
+  end
+
+  subgraph agent["FastAPI (LangGraph agent)"]
+    Extract["/extract"]
+    Graph["LangGraph state machine"]
+    State["/state/{thread_id}"]
+  end
+
+  DB[("Postgres\n(PostgresSaver)")]
+
+  Upload --> Extract
+  Upload --> Proxy
+  Proxy --> Graph
+  Graph --> DB
+  State --> DB
+  Graph -. interrupt() .-> Plan
+  Graph -. interrupt() .-> MCQ
+  Sidebar --> Proxy
+  Graph --> Summary
 ```
 
-The frontend never talks to FastAPI directly — all agent traffic proxies through `/api/copilotkit`.
+The frontend proxies all agent traffic through `/api/copilotkit`. PDF text extraction is the only direct call to FastAPI (`POST /extract`). On resume, the UI fetches public checkpoint state from `/state/{thread_id}`.
+
+## How the agent works
+
+1. **Upload** — The user uploads a PDF. The frontend extracts text via `/extract`, seeds `pdf_text` into checkpointed `AgentState`, and starts a LangGraph run with a fresh `thread_id`.
+2. **Plan** — `ingest_plan` calls the LLM with structured output to produce 3–5 learning objectives (title, description, difficulty).
+3. **HITL approval** — `approve` calls `interrupt()` and renders the plan in the UI. The user approves or requests changes; revisions loop back through `ingest_plan`.
+4. **MCQ pre-batch** — After approval, `prebatch_mcqs` generates one MCQ per objective (grounded in the PDF). Options are shuffled server-side; answer keys stay in `mcq_key` (never sent to the client).
+5. **Quiz loop** — For each objective: `generate_mcq` → `ask_mcq` (interrupt with radio choices) → user submits or asks the tutor → `grade` or `tutor` → retry or advance. Correct answers show green + explanation; incorrect answers show red + hint with unlimited penalty-free retries.
+6. **Summary** — When all objectives are done, `summary` computes the score (first-attempt correct / total) and generates personalized study tips.
+
+LangGraph checkpoints every step to Postgres, so a lesson survives server restarts and can resume from the last interrupt.
 
 ## Prerequisites
 
@@ -29,11 +64,12 @@ For local development without Docker you also need Python ≥ 3.12, [uv](https:/
 ## Quick start (Docker — recommended)
 
 ```bash
-git clone <repo-url>
+git clone https://github.com/letmerecall/memorang-assessment.git
 cd memorang-assessment
 cp .env.example .env
 # Edit .env and set OPENAI_API_KEY
-docker compose up --build
+make dev
+# or: docker compose up --build
 ```
 
 Open **http://localhost:3000** and upload [`sample.pdf`](sample.pdf) for a quick end-to-end demo.
@@ -46,7 +82,7 @@ Services:
 | Agent API | http://localhost:8123/health |
 | Postgres | `localhost:5432` |
 
-Stop with `docker compose down`. Add `-v` to also remove the Postgres volume.
+Stop with `make down` or `docker compose down`. Add `-v` to also remove the Postgres volume.
 
 ## Local development (optional)
 
@@ -103,14 +139,30 @@ The UI is available at `http://localhost:3000`.
 ## Running tests
 
 ```bash
-cd agent
-uv run pytest tests/ -v
+make test
 ```
 
+Or individually:
+
 ```bash
-cd frontend
-npm test
+cd agent && uv run pytest tests/ -v
+cd frontend && npm test
 ```
+
+All agent tests use mocked LLM calls — no API key required. End-to-end behavior is verified manually (see Loom script below).
+
+## Loom walkthrough script (< 5 min)
+
+Use this script when recording the submission demo:
+
+1. `make dev` (or `docker compose up --build`) — wait for all services healthy.
+2. Open **http://localhost:3000**, upload [`sample.pdf`](sample.pdf).
+3. Review the generated lesson plan → click **Approve**.
+4. Submit a **wrong** MCQ answer → confirm red highlight + hint, retry allowed.
+5. Use the in-widget **Ask / need a hint** box → tutor responds without revealing the answer, steers back to the question.
+6. Submit the **correct** answer → green highlight + explanation → advances to next objective.
+7. Complete all objectives → summary with score and study tips.
+8. **Durability demo**: restart the agent container mid-lesson (`docker compose restart agent`), click **Resume lesson** → same `thread_id`, state restored from Postgres.
 
 ## Project structure
 
@@ -132,6 +184,7 @@ frontend/
   package.json        # pinned JS dependencies
 
 docker-compose.yml    # postgres + agent + frontend (one-command setup)
+Makefile              # make dev / make test convenience targets
 agent/Dockerfile
 frontend/Dockerfile
 .env.example          # required environment variables
@@ -147,15 +200,23 @@ docs/spike-notes.md   # proven CopilotKit/LangGraph symbol names & versions
 | `OPENAI_MODEL` | OpenRouter model slug | `openai/gpt-4.1` |
 | `DATABASE_URL` | Postgres connection string (local dev only) | `postgresql://memorang:memorang@localhost:5432/memorang` |
 | `AGENT_URL` | FastAPI base URL for Next.js (local dev only) | `http://localhost:8123` |
-
-With Docker Compose, `DATABASE_URL` and `AGENT_URL` are set automatically for inter-container networking.
 | `NEXT_PUBLIC_COPILOTKIT_PUBLIC_LICENSE_KEY` | CopilotKit license (optional) | — |
 
-Copy [`.env.example`](.env.example) to `.env` at the **repo root** before starting the agent. The frontend works with defaults; set `AGENT_URL` in `frontend/.env.local` only if the agent is not on `localhost:8123`.
+Copy [`.env.example`](.env.example) to `.env` at the **repo root** before starting the agent. With Docker Compose, `DATABASE_URL` and `AGENT_URL` are set automatically for inter-container networking. Set `AGENT_URL` in `frontend/.env.local` only if the agent is not on `localhost:8123`.
 
 ## Known limitations
 
 These are intentional MVP trade-offs, not bugs in the HITL or grading wiring.
+
+### PDF processing
+
+- **Large PDFs are truncated** to an ~80k-character budget (`trim_to_budget` in `pdf.py`). Future work: chunked planning or RAG over the full document.
+- **No OCR** — scanned/image-only PDFs with no embedded text are rejected with a friendly error.
+
+### Scope
+
+- **One MCQ per objective** in the MVP (state is list-shaped to allow N later).
+- **Single-document, single-user** lesson at a time (no multi-doc library or accounts).
 
 ### Session durability
 
