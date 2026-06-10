@@ -3,7 +3,7 @@ import "./globals.css";
 import { CopilotKitProvider } from "@/components/CopilotKitProvider";
 
 export const metadata: Metadata = {
-  title: "Memorang Learning Agent — Spike",
+  title: "Memorang Learning Agent",
 };
 
 export default function RootLayout({

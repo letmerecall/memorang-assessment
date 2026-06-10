@@ -81,11 +81,18 @@ npm run dev
 
 The UI is available at `http://localhost:3000`.
 
+For a quick end-to-end demo, upload [`sample.pdf`](sample.pdf) at the repo root.
+
 ## Running tests
 
 ```bash
 cd agent
 uv run pytest tests/ -v
+```
+
+```bash
+cd frontend
+npm test
 ```
 
 ## Project structure
@@ -130,7 +137,7 @@ These are intentional MVP trade-offs, not bugs in the HITL or grading wiring.
 
 - Only one active lesson is tracked (`lesson_thread_id` in `localStorage`). Opening the app in multiple tabs can race on the same thread ID.
 - If "Resume lesson" fails (expired checkpoint), you must click "Start new lesson" to clear the stored thread.
-- A failed first upload mints a fresh thread ID so retries do not merge into a partial checkpoint.
+- Retries after a failed plan generation reuse the same thread ID; click "Start new lesson" to mint a fresh thread.
 
 ### Plan revision feedback
 
@@ -140,6 +147,6 @@ These are intentional MVP trade-offs, not bugs in the HITL or grading wiring.
 - Feedback is appended as a soft hint (`Previous feedback to incorporate: …`), not as a hard override of the default rules.
 - Each revision **regenerates** a plan from the PDF rather than editing the plan you just saw, so targeted edits ("drop objective 2") are unreliable.
 
-### MCQ answer position
+### MCQ option order
 
-Generated MCQs often place the correct answer in **option 1 or 2**. This is common LLM positional bias: the model tends to write the correct answer first, and options are shown in generation order with no post-generation shuffle. Grading still compares against the stored `correct_index` correctly.
+Options are **shuffled server-side** after generation (seeded by question text) to reduce LLM positional bias. The answer key stays server-side in `mcq_key` and is not sent to the client interrupt payload.
