@@ -82,7 +82,7 @@ export function PdfUpload({
           message={displayError}
           onRetry={
             agentRunError
-              ? onAgentRetry
+              ? () => onAgentRetry?.()
               : agent.state && (agent.state as { pdf_text?: string }).pdf_text
                 ? handleRetry
                 : openFilePicker

@@ -15,5 +15,42 @@ services:
       timeout: 5s
       retries: 5
 
+  agent:
+    build:
+      context: ./agent
+    ports:
+      - "8123:8123"
+    environment:
+      DATABASE_URL: postgresql://memorang:memorang@postgres:5432/memorang
+      OPENAI_API_KEY: ${OPENAI_API_KEY:?Set OPENAI_API_KEY in .env}
+      OPENAI_BASE_URL: ${OPENAI_BASE_URL:-https://openrouter.ai/api/v1}
+      OPENAI_MODEL: ${OPENAI_MODEL:-openai/gpt-4.1}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8123/health')",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  frontend:
+    build:
+      context: ./frontend
+    ports:
+      - "3000:3000"
+    environment:
+      AGENT_URL: http://agent:8123
+    depends_on:
+      agent:
+        condition: service_healthy
+
 volumes:
   postgres_data:
