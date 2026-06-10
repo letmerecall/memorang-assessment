@@ -40,6 +40,7 @@ async def lifespan(app: FastAPI):
         checkpointer = MemorySaver()
 
     graph = build_graph(checkpointer=checkpointer)
+    app.state.graph = graph
     add_langgraph_fastapi_endpoint(
         app=app,
         agent=LangGraphAGUIAgent(
@@ -62,6 +63,36 @@ app = FastAPI(lifespan=lifespan)
 @app.get("/health")
 async def health():
     return {"status": "ok"}
+
+
+# State keys safe to expose to the browser. Excludes mcq_key and mcq_queue
+# (answer keys) and pdf_text (large, private to the agent).
+PUBLIC_STATE_KEYS = (
+    "lesson_plan",
+    "current_idx",
+    "current_mcq",
+    "results",
+    "attempts",
+    "asked_tutor",
+    "last_tutor_reply",
+)
+
+
+@app.get("/state/{thread_id}")
+async def get_thread_state(thread_id: str):
+    """Return checkpoint state for a thread so the UI can rehydrate on resume.
+
+    Runs resumed against an active interrupt are short-circuited by
+    ag_ui_langgraph without a STATE_SNAPSHOT event, so the frontend fetches
+    state explicitly when resuming a session.
+    """
+    snapshot = await app.state.graph.aget_state(
+        {"configurable": {"thread_id": thread_id}}
+    )
+    values = snapshot.values or {}
+    if not values:
+        raise HTTPException(status_code=404, detail="Unknown thread.")
+    return {k: values[k] for k in PUBLIC_STATE_KEYS if k in values}
 
 
 @app.post("/extract")

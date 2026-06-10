@@ -82,3 +82,41 @@ def test_lifespan_wires_postgres_checkpointer_when_database_url_set():
     mock_checkpointer.setup.assert_awaited_once()
     mock_pool.close.assert_awaited_once()
     mock_build.assert_called_once_with(checkpointer=mock_checkpointer)
+
+
+def test_state_endpoint_returns_public_state_only():
+    import asyncio
+
+    with TestClient(app) as client:
+        graph = app.state.graph
+        config = {"configurable": {"thread_id": "state-test-thread"}}
+        asyncio.run(
+            graph.aupdate_state(
+                config,
+                {
+                    "lesson_plan": {"objectives": [{"title": "O1"}]},
+                    "current_idx": 1,
+                    "current_mcq": {"question": "Q?", "options": ["a", "b", "c", "d"]},
+                    "pdf_text": "private pdf text",
+                    "mcq_key": {"correct_index": 2},
+                    "mcq_queue": [{"mcq_key": {"correct_index": 0}}],
+                },
+            )
+        )
+        resp = client.get("/state/state-test-thread")
+
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["lesson_plan"] == {"objectives": [{"title": "O1"}]}
+    assert data["current_idx"] == 1
+    assert data["current_mcq"]["question"] == "Q?"
+    # Never leak answer keys or raw PDF text to the client.
+    assert "mcq_key" not in data
+    assert "mcq_queue" not in data
+    assert "pdf_text" not in data
+
+
+def test_state_endpoint_returns_404_for_unknown_thread():
+    with TestClient(app) as client:
+        resp = client.get("/state/no-such-thread")
+    assert resp.status_code == 404

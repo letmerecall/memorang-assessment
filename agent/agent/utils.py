@@ -52,13 +52,14 @@ def make_llm(
     *,
     temperature: float = 0,
     structured_output: type | None = None,
+    model: str | None = None,
 ) -> ChatOpenAI:
-    model = os.environ.get("OPENAI_MODEL", "openai/gpt-4.1")
+    resolved = model or os.environ.get("OPENAI_MODEL", "openai/gpt-4.1")
     base_url = os.environ.get(
         "OPENAI_BASE_URL",
         "https://openrouter.ai/api/v1",
     )
-    llm = ChatOpenAI(model=model, temperature=temperature, base_url=base_url)
+    llm = ChatOpenAI(model=resolved, temperature=temperature, base_url=base_url)
     if structured_output is not None:
         return llm.with_structured_output(structured_output)
     return llm

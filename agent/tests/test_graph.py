@@ -8,6 +8,7 @@ from agent.errors import PlanApprovalError
 from agent.nodes.grade import grade, route_mcq, route_after_grade
 from agent.nodes.ask_mcq import ask_mcq
 from agent.nodes.generate_mcq import generate_mcq
+from agent.nodes.prebatch_mcqs import prebatch_mcqs
 from agent.nodes.summary import summary, _generate_tips
 from agent.mcq_schema import MCQ, MCQGenerationError
 
@@ -176,9 +177,9 @@ def test_route_after_approve_routes_to_ingest_plan_when_feedback_set():
     assert route_after_approve(state) == "ingest_plan"
 
 
-def test_route_after_approve_routes_to_generate_mcq_when_no_feedback():
+def test_route_after_approve_routes_to_prebatch_when_no_feedback():
     state = AgentState(messages=[], revision_feedback=None)
-    assert route_after_approve(state) == "generate_mcq"
+    assert route_after_approve(state) == "prebatch_mcqs"
 
 
 def test_route_after_approve_routes_to_ingest_plan_when_feedback_empty():
@@ -435,32 +436,69 @@ def _mock_mcq_model():
     )
 
 
+def _queue_item(question="Q?", options=None, correct_index=1):
+    return {
+        "current_mcq": {"question": question, "options": options or ["A", "B", "C", "D"]},
+        "mcq_key": {"correct_index": correct_index, "explanation": "Exp.", "hint": "Hint.", "source_quote": "Quote."},
+    }
+
+
 def test_generate_mcq_resets_attempts_and_clears_last_grade():
     state = AgentState(
         messages=[],
-        pdf_text="some educational text",
-        lesson_plan={
-            "objectives": [
-                {"title": "Topic A", "description": "Learn A.", "difficulty": "beginner"}
-            ]
-        },
-        current_idx=0,
+        mcq_queue=[_queue_item()],
         attempts=3,
         last_grade={"correct": False, "hint": "old hint"},
     )
-    with patch("agent.nodes.generate_mcq.make_llm") as MockLLM:
-        mock_instance = MockLLM.return_value
-        mock_instance.invoke.return_value = _mock_mcq_model()
-        result = generate_mcq(state)
+    result = generate_mcq(state)
     assert result["attempts"] == 0
     assert result["last_grade"] is None
     assert result["current_mcq"]["question"] == "Q?"
     assert "correct_index" not in result["current_mcq"]
-    key = result["mcq_key"]
-    assert result["current_mcq"]["options"][key["correct_index"]] == "B"
+    assert result["mcq_key"]["correct_index"] == 1
 
 
-def test_generate_mcq_includes_objective_and_pdf_in_prompt():
+def test_generate_mcq_pops_first_item_from_queue():
+    state = AgentState(
+        messages=[],
+        mcq_queue=[_queue_item("Q1?"), _queue_item("Q2?")],
+    )
+    result = generate_mcq(state)
+    assert result["current_mcq"]["question"] == "Q1?"
+    assert len(result["mcq_queue"]) == 1
+    assert result["mcq_queue"][0]["current_mcq"]["question"] == "Q2?"
+
+
+def test_generate_mcq_raises_when_queue_empty():
+    state = AgentState(messages=[], mcq_queue=[])
+    with pytest.raises(MCQGenerationError):
+        generate_mcq(state)
+
+
+# ── prebatch_mcqs ──────────────────────────────────────────────────────
+
+def test_prebatch_mcqs_generates_one_item_per_objective():
+    state = AgentState(
+        messages=[],
+        pdf_text="content",
+        lesson_plan={
+            "objectives": [
+                {"title": "A", "description": "Desc A.", "difficulty": "beginner"},
+                {"title": "B", "description": "Desc B.", "difficulty": "beginner"},
+                {"title": "C", "description": "Desc C.", "difficulty": "intermediate"},
+            ]
+        },
+    )
+    with patch("agent.nodes.prebatch_mcqs.make_llm") as MockLLM:
+        MockLLM.return_value.invoke.return_value = _mock_mcq_model()
+        result = prebatch_mcqs(state)
+    assert len(result["mcq_queue"]) == 3
+    for item in result["mcq_queue"]:
+        assert "current_mcq" in item
+        assert "mcq_key" in item
+
+
+def test_prebatch_mcqs_includes_objective_and_pdf_in_prompt():
     state = AgentState(
         messages=[],
         pdf_text="the content",
@@ -469,35 +507,17 @@ def test_generate_mcq_includes_objective_and_pdf_in_prompt():
                 {"title": "Topic A", "description": "Learn A.", "difficulty": "beginner"}
             ]
         },
-        current_idx=0,
-        attempts=0,
-        last_grade=None,
     )
-    with patch("agent.nodes.generate_mcq.make_llm") as MockLLM:
+    with patch("agent.nodes.prebatch_mcqs.make_llm") as MockLLM:
         mock_instance = MockLLM.return_value
         mock_instance.invoke.return_value = _mock_mcq_model()
-        generate_mcq(state)
+        prebatch_mcqs(state)
     prompt = mock_instance.invoke.call_args[0][0]
     assert "Topic A" in prompt
     assert "the content" in prompt
 
 
-def test_generate_mcq_raises_when_index_out_of_range():
-    state = AgentState(
-        messages=[],
-        pdf_text="content",
-        lesson_plan={
-            "objectives": [
-                {"title": "Only", "description": "One.", "difficulty": "beginner"}
-            ]
-        },
-        current_idx=3,
-    )
-    with pytest.raises(MCQGenerationError, match="out of range"):
-        generate_mcq(state)
-
-
-def test_generate_mcq_shuffles_options():
+def test_prebatch_mcqs_shuffles_options():
     """After shuffle, correct_index must point to the original correct answer text."""
     state = AgentState(
         messages=[],
@@ -507,21 +527,19 @@ def test_generate_mcq_shuffles_options():
                 {"title": "Topic", "description": "Desc.", "difficulty": "beginner"}
             ]
         },
-        current_idx=0,
     )
-    with patch("agent.nodes.generate_mcq.make_llm") as MockLLM:
-        mock_instance = MockLLM.return_value
-        mock_instance.invoke.return_value = _mock_mcq_model()
-        result = generate_mcq(state)
+    with patch("agent.nodes.prebatch_mcqs.make_llm") as MockLLM:
+        MockLLM.return_value.invoke.return_value = _mock_mcq_model()
+        result = prebatch_mcqs(state)
 
-    mcq = result["current_mcq"]
-    key = result["mcq_key"]
-    correct_text = "B"
-    assert mcq["options"][key["correct_index"]] == correct_text
+    item = result["mcq_queue"][0]
+    mcq = item["current_mcq"]
+    key = item["mcq_key"]
+    assert mcq["options"][key["correct_index"]] == "B"
     assert mcq["options"] != ["A", "B", "C", "D"]
 
 
-def test_generate_mcq_shuffle_is_deterministic_per_question():
+def test_prebatch_mcqs_shuffle_is_deterministic_per_question():
     """Same question text → same shuffle (seeded by question text for reproducibility)."""
     state = AgentState(
         messages=[],
@@ -531,20 +549,19 @@ def test_generate_mcq_shuffle_is_deterministic_per_question():
                 {"title": "Topic", "description": "Desc.", "difficulty": "beginner"}
             ]
         },
-        current_idx=0,
     )
-    with patch("agent.nodes.generate_mcq.make_llm") as MockLLM:
-        mock_instance = MockLLM.return_value
-        mock_instance.invoke.return_value = _mock_mcq_model()
-        result1 = generate_mcq(state)
+    with patch("agent.nodes.prebatch_mcqs.make_llm") as MockLLM:
+        MockLLM.return_value.invoke.return_value = _mock_mcq_model()
+        result1 = prebatch_mcqs(state)
 
-    with patch("agent.nodes.generate_mcq.make_llm") as MockLLM:
-        mock_instance = MockLLM.return_value
-        mock_instance.invoke.return_value = _mock_mcq_model()
-        result2 = generate_mcq(state)
+    with patch("agent.nodes.prebatch_mcqs.make_llm") as MockLLM:
+        MockLLM.return_value.invoke.return_value = _mock_mcq_model()
+        result2 = prebatch_mcqs(state)
 
-    assert result1["current_mcq"]["options"] == result2["current_mcq"]["options"]
-    assert result1["mcq_key"]["correct_index"] == result2["mcq_key"]["correct_index"]
+    item1 = result1["mcq_queue"][0]
+    item2 = result2["mcq_queue"][0]
+    assert item1["current_mcq"]["options"] == item2["current_mcq"]["options"]
+    assert item1["mcq_key"]["correct_index"] == item2["mcq_key"]["correct_index"]
 
 
 # ── summary ────────────────────────────────────────────────────────────
@@ -777,22 +794,13 @@ def test_grade_records_asked_tutor_false_when_not_set():
 def test_generate_mcq_resets_asked_tutor():
     state = AgentState(
         messages=[],
-        pdf_text="some educational text",
-        lesson_plan={
-            "objectives": [
-                {"title": "Topic A", "description": "Learn A.", "difficulty": "beginner"}
-            ]
-        },
-        current_idx=0,
+        mcq_queue=[_queue_item()],
         attempts=0,
         last_grade=None,
         asked_tutor=True,
         last_tutor_reply="Old hint.",
     )
-    with patch("agent.nodes.generate_mcq.make_llm") as MockLLM:
-        mock_instance = MockLLM.return_value
-        mock_instance.invoke.return_value = _mock_mcq_model()
-        result = generate_mcq(state)
+    result = generate_mcq(state)
     assert result["asked_tutor"] is False
     assert result["last_tutor_reply"] is None
 
