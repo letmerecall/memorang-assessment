@@ -23,6 +23,9 @@ export type MCQContent = {
 export type MCQFeedback = {
   correct: boolean;
   hint?: string;
+  explanation?: string;
+  source_quote?: string;
+  selected_index?: number;
 } | null;
 
 export type MCQPayload = {
@@ -50,9 +53,7 @@ export type SummaryPayload = {
   content: SummaryContent;
 };
 
-export type StoredMcq = MCQContent & {
-  correct_index?: number;
-};
+export type StoredMcq = MCQContent;
 
 export type AgentStateShape = {
   lesson_plan?: LessonPlanData;
