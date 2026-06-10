@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState, type ReactNode } from "react";
 import { useAgent, useInterrupt } from "@copilotkit/react-core/v2";
 import { LEARNING_AGENT_ID } from "@/lib/agent";
 import { mcqOptionKey } from "@/lib/keys";
@@ -27,7 +27,6 @@ type McqFormProps = {
   options: string[];
   feedback: MCQFeedback;
   tutorReply: string | null;
-  isRunning: boolean;
   onSubmit: (index: number) => void;
   onAsk: (text: string) => void;
   onContinue: () => void;
@@ -38,11 +37,15 @@ function McqForm({
   options,
   feedback,
   tutorReply,
-  isRunning,
   onSubmit,
   onAsk,
   onContinue,
 }: McqFormProps) {
+  // Subscribed here rather than passed as a prop: while the agent runs, the
+  // hook below re-returns the previous (frozen) element, so a prop would go
+  // stale and the loading/disabled states would never show.
+  const { agent } = useAgent({ agentId: LEARNING_AGENT_ID });
+  const isRunning = agent.isRunning;
   const [selected, setSelected] = useState<number | null>(null);
   const [askText, setAskText] = useState("");
   const [pending, setPending] = useState<"submit" | "ask" | "continue" | null>(null);
@@ -181,8 +184,9 @@ function McqForm({
 
 export function useMcqWidget() {
   const { agent } = useAgent({ agentId: LEARNING_AGENT_ID });
+  const heldRef = useRef<ReactNode>(null);
 
-  return useInterrupt({
+  const live = useInterrupt({
     agentId: LEARNING_AGENT_ID,
     renderInChat: false,
     enabled: (event) => parseMcqPayload(event.value) !== null,
@@ -199,7 +203,6 @@ export function useMcqWidget() {
           options={options}
           feedback={payload.feedback}
           tutorReply={payload.tutor_reply ?? null}
-          isRunning={agent.isRunning}
           onSubmit={(index) => resolve({ kind: "answer", index })}
           onAsk={(text) => resolve({ kind: "question", text })}
           onContinue={() => resolve({ kind: "continue" })}
@@ -207,4 +210,17 @@ export function useMcqWidget() {
       );
     },
   });
+
+  // resolve() clears the interrupt for the entire run (useInterrupt only
+  // re-emits at run end), which unmounted the form and made every Submit/Ask/
+  // Continue look like a page refresh. Hold the last element while the agent
+  // is running so the form stays mounted; useInterrupt's resolve is a stable
+  // callback, so the held element remains functional. Once the run ends
+  // without a new MCQ interrupt (summary, error), drop it.
+  if (live) {
+    heldRef.current = live;
+  } else if (!agent.isRunning) {
+    heldRef.current = null;
+  }
+  return live ?? heldRef.current;
 }
