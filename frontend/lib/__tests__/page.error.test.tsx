@@ -10,8 +10,10 @@ type SubscribeCallbacks = {
 
 let capturedCallbacks: SubscribeCallbacks = {};
 const mockRunAgent = vi.fn(() => Promise.resolve());
+// Mirrors @ag-ui/client AbstractAgent.setState, which REPLACES the whole
+// state object rather than merging the update into it.
 const mockSetState = vi.fn((update: Record<string, unknown>) => {
-  Object.assign(mockAgent.state, update);
+  mockAgent.state = update;
 });
 const mockAgent = {
   threadId: "test-thread",
@@ -89,8 +91,45 @@ describe("HomePage global error handling", () => {
 
     await userEvent.click(screen.getByRole("button", { name: /retry/i }));
 
-    expect(mockSetState).toHaveBeenCalledWith({ phase: null, error_message: null });
+    expect(mockSetState).toHaveBeenCalledWith(
+      expect.objectContaining({ phase: null, error_message: null }),
+    );
     expect(mockRunAgent).toHaveBeenCalled();
+  });
+
+  it("preserves synced agent state when run finishes", () => {
+    mockAgent.state = {
+      lesson_plan: { objectives: [] },
+      current_mcq: { question: "Q1", options: ["a", "b", "c", "d"] },
+      current_idx: 1,
+    };
+    render(<HomePage />);
+
+    act(() => {
+      capturedCallbacks.onRunFinishedEvent?.();
+    });
+
+    expect(mockAgent.state.lesson_plan).toBeTruthy();
+    expect(mockAgent.state.current_mcq).toBeTruthy();
+    expect(mockAgent.state.current_idx).toBe(1);
+    expect(mockAgent.state.phase).toBeNull();
+    expect(mockAgent.state.error_message).toBeNull();
+  });
+
+  it("preserves synced agent state when a run error fires", () => {
+    mockAgent.state = {
+      lesson_plan: { objectives: [] },
+      current_mcq: { question: "Q1", options: ["a", "b", "c", "d"] },
+    };
+    render(<HomePage />);
+
+    act(() => {
+      capturedCallbacks.onRunErrorEvent?.();
+    });
+
+    expect(mockAgent.state.lesson_plan).toBeTruthy();
+    expect(mockAgent.state.current_mcq).toBeTruthy();
+    expect(mockAgent.state.phase).toBe("error");
   });
 
   it("keeps error visible when error and finish fire back-to-back on failed run", async () => {
@@ -123,10 +162,9 @@ describe("HomePage global error handling", () => {
       capturedCallbacks.onRunFinishedEvent?.();
     });
 
-    expect(mockSetState).toHaveBeenCalledWith({
-      phase: null,
-      error_message: null,
-    });
+    expect(mockSetState).toHaveBeenCalledWith(
+      expect.objectContaining({ phase: null, error_message: null }),
+    );
     rerender(<HomePage />);
 
     await waitFor(() => {

@@ -104,6 +104,10 @@ export function showPdfUpload(phase: SessionPhase): boolean {
 }
 
 export function showSidebar(phase: SessionPhase, planApproved: boolean): boolean {
+  // The MCQ and summary widgets only ever render after plan approval, so
+  // those phases imply approval even when the synced agent state carries no
+  // quiz progress yet (e.g. before the first state snapshot lands).
+  if (phase === "quiz" || phase === "summary") return true;
   return planApproved && phase !== "upload" && phase !== "approval";
 }
 

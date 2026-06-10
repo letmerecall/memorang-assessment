@@ -1,3 +1,22 @@
+type StatefulAgent = {
+  state: unknown;
+  setState: (state: Record<string, unknown>) => void;
+};
+
+/**
+ * Merge `patch` into the agent's current state. AbstractAgent.setState
+ * REPLACES the whole state object, so calling it with a partial update
+ * wipes everything synced from the server (lesson_plan, current_mcq, …).
+ * Always patch through this helper unless a full reset is intended.
+ */
+export function patchAgentState(
+  agent: StatefulAgent,
+  patch: Record<string, unknown>,
+): void {
+  const current = (agent.state ?? {}) as Record<string, unknown>;
+  agent.setState({ ...current, ...patch });
+}
+
 /** Mirrors agent/agent/state.py fields used by the UI. */
 export const RESET_STATE = {
   pdf_text: null,

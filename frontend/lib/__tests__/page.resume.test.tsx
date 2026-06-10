@@ -120,6 +120,32 @@ describe("HomePage resume error handling", () => {
     );
   });
 
+  it("hydrates agent state from the state endpoint on Resume", async () => {
+    // The agent backend short-circuits interrupted runs without emitting a
+    // STATE_SNAPSHOT, so the page must fetch checkpoint state itself.
+    const statePayload = {
+      lesson_plan: { objectives: [{ title: "O1", description: "D", difficulty: "beginner" }] },
+      current_idx: 2,
+    };
+    const fetchMock = vi.fn(() =>
+      Promise.resolve({ ok: true, json: () => Promise.resolve(statePayload) }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    try {
+      render(<HomePage />);
+      await userEvent.click(screen.getByRole("button", { name: /Resume lesson/i }));
+
+      expect(fetchMock).toHaveBeenCalledWith("/api/state/stored-thread-id");
+      await waitFor(() => {
+        expect(mockAgent.setState).toHaveBeenCalledWith(
+          expect.objectContaining(statePayload),
+        );
+      });
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
   it("subscribes once and does not resubscribe on Resume click", async () => {
     render(<HomePage />);
     expect(mockAgent.subscribe).toHaveBeenCalledTimes(1);

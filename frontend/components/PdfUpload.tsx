@@ -4,6 +4,7 @@ import { useRef, useState } from "react";
 import { useAgent } from "@copilotkit/react-core/v2";
 import { ErrorCard } from "@/components/ErrorCard";
 import { LEARNING_AGENT_ID } from "@/lib/agent";
+import { patchAgentState } from "@/lib/agentState";
 
 type PdfUploadProps = {
   onSessionStart?: (threadId: string) => void;
@@ -37,7 +38,7 @@ export function PdfUpload({
         setError(data.detail ?? "Upload failed.");
         return;
       }
-      agent.setState({ pdf_text: data.text, lesson_plan: null, phase: null, error_message: null });
+      patchAgentState(agent, { pdf_text: data.text, lesson_plan: null, phase: null, error_message: null });
       onSessionStart?.(agent.threadId);
       await agent.runAgent();
     } catch {
@@ -55,7 +56,7 @@ export function PdfUpload({
   function handleRetry() {
     setRetrying(true);
     setError(null);
-    agent.setState({ phase: null, error_message: null });
+    patchAgentState(agent, { phase: null, error_message: null });
     agent.runAgent().catch(() => {
       setError("Could not generate a lesson plan. Please try again.");
       setRetrying(false);

@@ -187,7 +187,16 @@ describe("layout helpers", () => {
   it("shows sidebar when approved outside upload and approval", () => {
     expect(showSidebar("quiz", true)).toBe(true);
     expect(showSidebar("approval", true)).toBe(false);
-    expect(showSidebar("quiz", false)).toBe(false);
+    expect(showSidebar("upload", true)).toBe(false);
+  });
+
+  it("shows sidebar during quiz and summary even when approval cannot be derived from state", () => {
+    // An MCQ or summary widget can only exist after plan approval, so these
+    // phases imply approval even if the synced state lacks quiz progress.
+    expect(showSidebar("quiz", false)).toBe(true);
+    expect(showSidebar("summary", false)).toBe(true);
+    expect(showSidebar("generating", false)).toBe(false);
+    expect(showSidebar("planIdle", false)).toBe(false);
   });
 });
 

@@ -9,7 +9,7 @@ import { useMcqWidget } from "@/components/McqWidget";
 import { useSummaryWidget } from "@/components/Summary";
 import { ProgressSidebar } from "@/components/ProgressSidebar";
 import { ErrorCard } from "@/components/ErrorCard";
-import { RESET_STATE } from "@/lib/agentState";
+import { patchAgentState, RESET_STATE } from "@/lib/agentState";
 import { LEARNING_AGENT_ID } from "@/lib/agent";
 import {
   derivePhase,
@@ -99,7 +99,7 @@ export default function HomePage() {
         if (prePlan) {
           setUploadRunError(PLAN_GEN_ERROR);
         } else {
-          agent.setState({ phase: "error", error_message: msg });
+          patchAgentState(agent, { phase: "error", error_message: msg });
           setRunError(msg);
         }
         setResuming(false);
@@ -112,7 +112,7 @@ export default function HomePage() {
         if (!runFailedRef.current) {
           setRunError(null);
           setUploadRunError(null);
-          agent.setState({ phase: null, error_message: null });
+          patchAgentState(agent, { phase: null, error_message: null });
         }
         runFailedRef.current = false;
       },
@@ -125,6 +125,17 @@ export default function HomePage() {
     setRunError(null);
     resumingRef.current = true;
     setResuming(true);
+    // Resumed runs hit an active interrupt and are short-circuited by the
+    // backend without a STATE_SNAPSHOT, so rehydrate state explicitly.
+    const threadId = storedThreadId ?? agent.threadId;
+    fetch(`/api/state/${encodeURIComponent(threadId)}`)
+      .then((res) => (res.ok ? res.json() : null))
+      .then((restored) => {
+        if (restored) patchAgentState(agent, restored);
+      })
+      .catch(() => {
+        // Non-fatal: the quiz itself resumes from the interrupt payload.
+      });
     agent.runAgent().catch(() => {
       setRunError(RESUME_ERROR);
       setResuming(false);
@@ -136,7 +147,7 @@ export default function HomePage() {
     runFailedRef.current = false;
     setRetrying(true);
     setRunError(null);
-    agent.setState({ phase: null, error_message: null });
+    patchAgentState(agent, { phase: null, error_message: null });
     agent.runAgent().catch(() => {
       setRunError(RUN_ERROR);
       setRetrying(false);
@@ -146,7 +157,7 @@ export default function HomePage() {
   function handleUploadRetry() {
     runFailedRef.current = false;
     setUploadRunError(null);
-    agent.setState({ phase: null, error_message: null });
+    patchAgentState(agent, { phase: null, error_message: null });
     agent.runAgent().catch(() => {
       setUploadRunError(PLAN_GEN_ERROR);
     });
