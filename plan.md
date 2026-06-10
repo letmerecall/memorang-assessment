@@ -331,8 +331,8 @@ hint + penalty-free retry → step 4; proceed through all MCQs → quiz loop; su
   prompt/schema hard-require 3–5 objectives, feedback is a soft append-only hint, and each
   revision regenerates from the PDF rather than editing the rejected plan. Requests like
   "only 2 objectives" cannot be honored.
-- **MCQ correct-answer position bias** — LLMs often put the answer in option 1 or 2; options
-  are not shuffled after generation. Future work: post-generation shuffle or prompt constraint.
+- **MCQ option order** — options are shuffled server-side after generation (`generate_mcq._shuffle_mcq`);
+  the answer key lives in `mcq_key` and is not sent to the client interrupt payload.
 
 ## Risks / mitigations
 - *CopilotKit API churn* → pin versions, follow installed-version docs (flagged above).
