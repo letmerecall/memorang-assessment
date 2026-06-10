@@ -128,6 +128,9 @@ docs/spike-notes.md   # proven CopilotKit/LangGraph symbol names & versions
 | `OPENAI_MODEL` | OpenRouter model slug | `openai/gpt-4.1` |
 | `DATABASE_URL` | Postgres connection string | `postgresql://memorang:memorang@localhost:5432/memorang` |
 | `AGENT_URL` | FastAPI base URL (used by Next.js) | `http://localhost:8123` |
+| `NEXT_PUBLIC_COPILOTKIT_PUBLIC_LICENSE_KEY` | CopilotKit license (optional) | — |
+
+Copy [`.env.example`](.env.example) to `.env` at the **repo root** before starting the agent. The frontend works with defaults; set `AGENT_URL` in `frontend/.env.local` only if the agent is not on `localhost:8123`.
 
 ## Known limitations
 
