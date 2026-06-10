@@ -9,7 +9,7 @@ down:
 test: test-agent test-frontend
 
 test-agent:
-	cd agent && uv run pytest tests/ -v
+	cd agent && uv sync --extra test && uv run pytest tests/ -v
 
 test-frontend:
-	cd frontend && npm test -- --run
+	cd frontend && npm test
