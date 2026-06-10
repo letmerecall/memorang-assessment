@@ -200,10 +200,12 @@ def test_graph_has_summary_node():
 
 # ── grade ──────────────────────────────────────────────────────────────
 
-def _mcq_dict():
+def _mcq_public():
+    return {"question": "Q?", "options": ["A", "B", "C", "D"]}
+
+
+def _mcq_key():
     return {
-        "question": "Q?",
-        "options": ["A", "B", "C", "D"],
         "correct_index": 2,
         "explanation": "Because C.",
         "hint": "Think about C.",
@@ -224,7 +226,8 @@ def test_grade_correct_first_attempt():
         messages=[],
         lesson_plan=_plan_with_one_objective(),
         current_idx=0,
-        current_mcq=_mcq_dict(),
+        current_mcq=_mcq_public(),
+        mcq_key=_mcq_key(),
         attempts=0,
         results=None,
         last_answer={"kind": "answer", "index": 2},
@@ -233,6 +236,7 @@ def test_grade_correct_first_attempt():
     assert result["last_grade"]["correct"] is True
     assert result["last_grade"]["explanation"] == "Because C."
     assert result["last_grade"]["source_quote"] == "C is correct."
+    assert result["last_grade"]["selected_index"] == 2
     assert result["attempts"] == 1
     assert result["current_idx"] == 1
     assert len(result["results"]) == 1
@@ -246,7 +250,8 @@ def test_grade_incorrect_first_attempt():
         messages=[],
         lesson_plan=_plan_with_one_objective(),
         current_idx=0,
-        current_mcq=_mcq_dict(),
+        current_mcq=_mcq_public(),
+        mcq_key=_mcq_key(),
         attempts=0,
         results=None,
         last_answer={"kind": "answer", "index": 0},
@@ -254,6 +259,7 @@ def test_grade_incorrect_first_attempt():
     result = grade(state)
     assert result["last_grade"]["correct"] is False
     assert result["last_grade"]["hint"] == "Think about C."
+    assert result["last_grade"]["selected_index"] == 0
     assert result["attempts"] == 1
     assert "results" not in result
     assert "current_idx" not in result
@@ -264,7 +270,8 @@ def test_grade_correct_second_attempt_not_first_try():
         messages=[],
         lesson_plan=_plan_with_one_objective(),
         current_idx=0,
-        current_mcq=_mcq_dict(),
+        current_mcq=_mcq_public(),
+        mcq_key=_mcq_key(),
         attempts=1,
         results=None,
         last_answer={"kind": "answer", "index": 2},
@@ -280,7 +287,8 @@ def test_grade_appends_to_existing_results():
         messages=[],
         lesson_plan=_plan_with_one_objective(),
         current_idx=0,
-        current_mcq=_mcq_dict(),
+        current_mcq=_mcq_public(),
+        mcq_key=_mcq_key(),
         attempts=0,
         results=existing,
         last_answer={"kind": "answer", "index": 2},
@@ -306,14 +314,43 @@ def test_route_mcq_missing_kind_defaults_to_grade():
     assert route_mcq(state) == "grade"
 
 
+def test_route_mcq_continue_routes_to_generate_mcq_when_more_objectives():
+    state = AgentState(
+        messages=[],
+        lesson_plan={
+            "objectives": [
+                {"title": "T0", "description": "D0", "difficulty": "beginner"},
+                {"title": "T1", "description": "D1", "difficulty": "beginner"},
+            ]
+        },
+        current_idx=1,
+        last_answer={"kind": "continue"},
+    )
+    assert route_mcq(state) == "generate_mcq"
+
+
+def test_route_mcq_continue_routes_to_summary_when_all_done():
+    state = AgentState(
+        messages=[],
+        lesson_plan={
+            "objectives": [
+                {"title": "T0", "description": "D0", "difficulty": "beginner"},
+            ]
+        },
+        current_idx=1,
+        last_answer={"kind": "continue"},
+    )
+    assert route_mcq(state) == "summary"
+
+
 # ── route_after_grade ──────────────────────────────────────────────────
 
-def test_route_after_grade_correct_no_plan_routes_to_summary():
+def test_route_after_grade_correct_routes_to_ask_mcq_for_reveal():
     state = AgentState(
         messages=[],
         last_grade={"correct": True, "explanation": "...", "source_quote": "..."},
     )
-    assert route_after_grade(state) == "summary"
+    assert route_after_grade(state) == "ask_mcq"
 
 
 def test_route_after_grade_incorrect_routes_to_ask_mcq():
@@ -324,55 +361,26 @@ def test_route_after_grade_incorrect_routes_to_ask_mcq():
     assert route_after_grade(state) == "ask_mcq"
 
 
-def test_route_after_grade_correct_more_objectives_routes_to_generate_mcq():
-    state = AgentState(
-        messages=[],
-        lesson_plan={
-            "objectives": [
-                {"title": "T0", "description": "D0", "difficulty": "beginner"},
-                {"title": "T1", "description": "D1", "difficulty": "beginner"},
-                {"title": "T2", "description": "D2", "difficulty": "beginner"},
-            ]
-        },
-        current_idx=1,
-        last_grade={"correct": True, "explanation": "...", "source_quote": "..."},
-    )
-    assert route_after_grade(state) == "generate_mcq"
-
-
-def test_route_after_grade_correct_all_done_routes_to_summary():
-    state = AgentState(
-        messages=[],
-        lesson_plan={
-            "objectives": [
-                {"title": "T0", "description": "D0", "difficulty": "beginner"},
-                {"title": "T1", "description": "D1", "difficulty": "beginner"},
-                {"title": "T2", "description": "D2", "difficulty": "beginner"},
-            ]
-        },
-        current_idx=3,
-        last_grade={"correct": True, "explanation": "...", "source_quote": "..."},
-    )
-    assert route_after_grade(state) == "summary"
-
-
 # ── ask_mcq ────────────────────────────────────────────────────────────
 
-def test_ask_mcq_calls_interrupt_with_mcq_payload():
-    mcq = _mcq_dict()
+def test_ask_mcq_calls_interrupt_with_sanitized_mcq_payload():
+    mcq = _mcq_public()
     state = AgentState(messages=[], current_mcq=mcq, last_grade=None)
     with patch("agent.nodes.ask_mcq.interrupt") as mock_interrupt:
         mock_interrupt.return_value = {"kind": "answer", "index": 1}
         result = ask_mcq(state)
-    mock_interrupt.assert_called_once_with(
-        {"type": "mcq", "content": mcq, "feedback": None, "tutor_reply": None}
-    )
+    payload = mock_interrupt.call_args[0][0]
+    assert payload["type"] == "mcq"
+    assert payload["content"] == mcq
+    assert "correct_index" not in payload["content"]
+    assert payload["feedback"] is None
+    assert payload["tutor_reply"] is None
     assert result["last_answer"] == {"kind": "answer", "index": 1}
 
 
 def test_ask_mcq_passes_last_grade_as_feedback_on_retry():
-    mcq = _mcq_dict()
-    last_grade = {"correct": False, "hint": "Think about C."}
+    mcq = _mcq_public()
+    last_grade = {"correct": False, "hint": "Think about C.", "selected_index": 0}
     state = AgentState(messages=[], current_mcq=mcq, last_grade=last_grade)
     with patch("agent.nodes.ask_mcq.interrupt") as mock_interrupt:
         mock_interrupt.return_value = {"kind": "answer", "index": 2}
@@ -385,7 +393,7 @@ def test_ask_mcq_passes_last_grade_as_feedback_on_retry():
 
 def test_ask_mcq_parses_json_string_resume():
     import json
-    mcq = _mcq_dict()
+    mcq = _mcq_public()
     state = AgentState(messages=[], current_mcq=mcq, last_grade=None)
     with patch("agent.nodes.ask_mcq.interrupt") as mock_interrupt:
         mock_interrupt.return_value = json.dumps({"kind": "answer", "index": 3})
@@ -394,7 +402,7 @@ def test_ask_mcq_parses_json_string_resume():
 
 
 def test_ask_mcq_includes_tutor_reply_in_interrupt():
-    mcq = _mcq_dict()
+    mcq = _mcq_public()
     state = AgentState(
         messages=[],
         current_mcq=mcq,
@@ -447,9 +455,9 @@ def test_generate_mcq_resets_attempts_and_clears_last_grade():
     assert result["attempts"] == 0
     assert result["last_grade"] is None
     assert result["current_mcq"]["question"] == "Q?"
-    # Verify the shuffle invariant: correct_index points to the correct answer text ("B")
-    mcq = result["current_mcq"]
-    assert mcq["options"][mcq["correct_index"]] == "B"
+    assert "correct_index" not in result["current_mcq"]
+    key = result["mcq_key"]
+    assert result["current_mcq"]["options"][key["correct_index"]] == "B"
 
 
 def test_generate_mcq_includes_objective_and_pdf_in_prompt():
@@ -507,8 +515,9 @@ def test_generate_mcq_shuffles_options():
         result = generate_mcq(state)
 
     mcq = result["current_mcq"]
+    key = result["mcq_key"]
     correct_text = "B"
-    assert mcq["options"][mcq["correct_index"]] == correct_text
+    assert mcq["options"][key["correct_index"]] == correct_text
     assert mcq["options"] != ["A", "B", "C", "D"]
 
 
@@ -535,7 +544,7 @@ def test_generate_mcq_shuffle_is_deterministic_per_question():
         result2 = generate_mcq(state)
 
     assert result1["current_mcq"]["options"] == result2["current_mcq"]["options"]
-    assert result1["current_mcq"]["correct_index"] == result2["current_mcq"]["correct_index"]
+    assert result1["mcq_key"]["correct_index"] == result2["mcq_key"]["correct_index"]
 
 
 # ── summary ────────────────────────────────────────────────────────────
@@ -673,51 +682,30 @@ def test_generate_tips_retries_with_error_context():
 
 # ── tutor ─────────────────────────────────────────────────────────────────
 
-_TUTOR_MCQ = {
+_TUTOR_MCQ_PUBLIC = {
     "question": "What process do plants use to produce food?",
     "options": ["Respiration", "Fermentation", "Photosynthesis", "Digestion"],
-    "correct_index": 2,
-    "explanation": "Photosynthesis converts sunlight into sugar using chlorophyll.",
-    "hint": "It happens in the leaves using sunlight.",
-    "source_quote": "Plants use sunlight to produce food.",
 }
 
 
 def _tutor_state(**kwargs) -> AgentState:
     return AgentState(
         messages=[],
-        current_mcq=_TUTOR_MCQ,
+        current_mcq=_TUTOR_MCQ_PUBLIC,
         pdf_text="Plants use sunlight to create energy.",
         last_answer={"kind": "question", "text": "Can you give me a hint?"},
         **kwargs,
     )
 
 
-def test_tutor_prompt_excludes_correct_option_text():
+def test_tutor_prompt_excludes_all_option_text():
     from agent.nodes.tutor import tutor
     with patch("agent.nodes.tutor.make_llm") as MockLLM:
         MockLLM.return_value.invoke.return_value.content = "Here is a hint."
         tutor(_tutor_state())
     prompt = MockLLM.return_value.invoke.call_args[0][0]
-    assert "Photosynthesis" not in prompt  # options[correct_index] must be excluded
-
-
-def test_tutor_prompt_excludes_explanation():
-    from agent.nodes.tutor import tutor
-    with patch("agent.nodes.tutor.make_llm") as MockLLM:
-        MockLLM.return_value.invoke.return_value.content = "Here is a hint."
-        tutor(_tutor_state())
-    prompt = MockLLM.return_value.invoke.call_args[0][0]
-    assert _TUTOR_MCQ["explanation"] not in prompt
-
-
-def test_tutor_prompt_excludes_correct_index_value():
-    from agent.nodes.tutor import tutor
-    with patch("agent.nodes.tutor.make_llm") as MockLLM:
-        MockLLM.return_value.invoke.return_value.content = "Here is a hint."
-        tutor(_tutor_state())
-    prompt = MockLLM.return_value.invoke.call_args[0][0]
-    assert str(_TUTOR_MCQ["correct_index"]) not in prompt
+    for option in _TUTOR_MCQ_PUBLIC["options"]:
+        assert option not in prompt
 
 
 def test_tutor_prompt_includes_question_pdf_and_user_question():
@@ -726,7 +714,7 @@ def test_tutor_prompt_includes_question_pdf_and_user_question():
         MockLLM.return_value.invoke.return_value.content = "Here is a hint."
         tutor(_tutor_state())
     prompt = MockLLM.return_value.invoke.call_args[0][0]
-    assert _TUTOR_MCQ["question"] in prompt
+    assert _TUTOR_MCQ_PUBLIC["question"] in prompt
     assert "Plants use sunlight to create energy." in prompt
     assert "Can you give me a hint?" in prompt
 
@@ -758,7 +746,8 @@ def test_grade_records_asked_tutor_true_from_state():
         messages=[],
         lesson_plan=_plan_with_one_objective(),
         current_idx=0,
-        current_mcq=_mcq_dict(),
+        current_mcq=_mcq_public(),
+        mcq_key=_mcq_key(),
         attempts=0,
         results=None,
         last_answer={"kind": "answer", "index": 2},
@@ -773,7 +762,8 @@ def test_grade_records_asked_tutor_false_when_not_set():
         messages=[],
         lesson_plan=_plan_with_one_objective(),
         current_idx=0,
-        current_mcq=_mcq_dict(),
+        current_mcq=_mcq_public(),
+        mcq_key=_mcq_key(),
         attempts=0,
         results=None,
         last_answer={"kind": "answer", "index": 2},

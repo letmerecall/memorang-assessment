@@ -1,5 +1,6 @@
 import random
 
+from agent.mcq_public import split_mcq
 from agent.mcq_schema import MCQ, MCQGenerationError
 from agent.pdf import trim_to_budget
 from agent.state import AgentState
@@ -52,9 +53,12 @@ def generate_mcq(state: AgentState) -> dict:
         )
 
     mcq = invoke_with_validation_retry(llm, prompt, retry_suffix, MCQGenerationError)
+    full = _shuffle_mcq(mcq)
+    public, key = split_mcq(full)
 
     return {
-        "current_mcq": _shuffle_mcq(mcq),
+        "current_mcq": public,
+        "mcq_key": key,
         "attempts": 0,
         "last_grade": None,
         "asked_tutor": False,
