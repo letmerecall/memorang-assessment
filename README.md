@@ -50,6 +50,26 @@ The frontend proxies all agent traffic through `/api/copilotkit`. PDF text extra
 5. **Quiz loop** — For each objective: `generate_mcq` → `ask_mcq` (interrupt with radio choices) → user submits or asks the tutor → `grade` or `tutor` → retry or advance. Correct answers show green + explanation; incorrect answers show red + hint with unlimited penalty-free retries.
 6. **Summary** — When all objectives are done, `summary` computes the score (first-attempt correct / total) and generates personalized study tips.
 
+LangGraph node flow (`approve` and `ask_mcq` call `interrupt()` and pause for user input):
+
+```mermaid
+flowchart TB
+  ingest_plan --> approve
+  approve -->|request changes| ingest_plan
+  approve -->|approve| prebatch_mcqs
+  prebatch_mcqs --> generate_mcq --> ask_mcq
+
+  ask_mcq -->|submit answer| grade
+  ask_mcq -->|ask tutor| tutor
+  tutor --> ask_mcq
+  grade --> ask_mcq
+
+  ask_mcq -->|continue, more objectives| generate_mcq
+  ask_mcq -->|continue, all done| summary
+```
+
+After a wrong answer, `grade` loops back to `ask_mcq` with the hint shown (penalty-free retry). After a correct answer, the user clicks **Continue** to advance to the next objective or the summary.
+
 LangGraph checkpoints every step to Postgres, so a lesson survives server restarts and can resume from the last interrupt.
 
 ## Prerequisites
