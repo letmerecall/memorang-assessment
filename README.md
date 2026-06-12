@@ -188,20 +188,7 @@ cd agent && uv run pytest tests/ -v
 cd frontend && npm test
 ```
 
-All agent tests use mocked LLM calls — no API key required. End-to-end behavior is verified manually (see Loom script below).
-
-## Loom walkthrough script (< 5 min)
-
-Use this script when recording the submission demo:
-
-1. `make dev` (or `docker compose up --build`) — wait for all services healthy.
-2. Open **http://localhost:3000**, upload [`sample.pdf`](sample.pdf).
-3. Review the generated lesson plan → click **Approve**.
-4. Submit a **wrong** MCQ answer → confirm red highlight + hint, retry allowed.
-5. In the MCQ widget, type a question in **Ask your tutor…** and click **Ask** → tutor responds without revealing the answer, steers back to the question.
-6. Submit the **correct** answer → green highlight + explanation → advances to next objective.
-7. Complete all objectives → summary with score and study tips.
-8. **Durability demo**: restart the agent container mid-lesson (`docker compose restart agent`), click **Resume lesson** → same `thread_id`, state restored from Postgres.
+All agent tests use mocked LLM calls — no API key required.
 
 ## Project structure
 
