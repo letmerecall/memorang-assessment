@@ -11,8 +11,8 @@ services:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U memorang"]
-      interval: 5s
-      timeout: 5s
+      interval: 2s
+      timeout: 3s
       retries: 5
 
   agent:
@@ -37,10 +37,10 @@ services:
           "-c",
           "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8123/health')",
         ]
-      interval: 10s
-      timeout: 5s
+      interval: 3s
+      timeout: 3s
       retries: 5
-      start_period: 30s
+      start_period: 20s
 
   frontend:
     build:
@@ -51,7 +51,7 @@ services:
       AGENT_URL: http://agent:8123
     depends_on:
       agent:
-        condition: service_healthy
+        condition: service_started
 
 volumes:
   postgres_data:
